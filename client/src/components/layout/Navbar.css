@@ -160,6 +160,38 @@
   animation: pulseGlow 2s infinite;
 }
 
+.navbar-guest-group,
+.navbar-user-group {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.btn-user-dashboard {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.user-nav-name {
+  font-weight: 700;
+}
+
+.user-nav-role {
+  font-size: 0.72rem;
+  opacity: 0.85;
+  text-transform: uppercase;
+}
+
+.btn-logout {
+  color: var(--text-muted);
+}
+
+.btn-logout:hover {
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+}
+
 .btn-login-trigger {
   display: inline-flex;
 }
@@ -248,6 +280,10 @@
   }
 
   .btn-login-trigger {
+    display: none;
+  }
+
+  .btn-logout {
     display: none;
   }
 }

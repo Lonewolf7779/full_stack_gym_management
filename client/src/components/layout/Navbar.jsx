@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { Dumbbell, Menu, X, ShieldCheck, User, Sparkles, Activity } from 'lucide-react';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Dumbbell, Menu, X, User, Sparkles, LogOut, LayoutDashboard, Shield, Award, UserCheck } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 import Button from '../common/Button';
+import Badge from '../common/Badge';
 import './Navbar.css';
 
 export default function Navbar({ serverStatus }) {
@@ -8,21 +11,29 @@ export default function Navbar({ serverStatus }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
 
+  const { user, isAuthenticated, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const isHomePage = location.pathname === '/';
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 30);
 
-      const sections = ['home', 'about', 'features', 'memberships', 'trainers', 'why-us', 'reviews'];
-      const scrollPos = window.scrollY + 200;
+      if (isHomePage) {
+        const sections = ['home', 'about', 'features', 'memberships', 'trainers', 'why-us', 'reviews'];
+        const scrollPos = window.scrollY + 200;
 
-      for (const section of sections) {
-        const el = document.getElementById(section);
-        if (el) {
-          const top = el.offsetTop;
-          const height = el.offsetHeight;
-          if (scrollPos >= top && scrollPos < top + height) {
-            setActiveSection(section);
-            break;
+        for (const section of sections) {
+          const el = document.getElementById(section);
+          if (el) {
+            const top = el.offsetTop;
+            const height = el.offsetHeight;
+            if (scrollPos >= top && scrollPos < top + height) {
+              setActiveSection(section);
+              break;
+            }
           }
         }
       }
@@ -30,21 +41,39 @@ export default function Navbar({ serverStatus }) {
 
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [isHomePage]);
 
   const scrollToSection = (id) => {
     setMobileMenuOpen(false);
-    const element = document.getElementById(id);
-    if (element) {
-      element.scrollIntoView({ behavior: 'smooth' });
+    if (!isHomePage) {
+      navigate(`/#${id}`);
+      setTimeout(() => {
+        const element = document.getElementById(id);
+        if (element) element.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    } else {
+      const element = document.getElementById(id);
+      if (element) element.scrollIntoView({ behavior: 'smooth' });
     }
+  };
+
+  const getDashboardPath = (role) => {
+    if (role === 'admin') return '/admin';
+    if (role === 'trainer') return '/trainer';
+    return '/member';
+  };
+
+  const handleLogout = async () => {
+    setMobileMenuOpen(false);
+    await logout();
+    navigate('/');
   };
 
   return (
     <header className={`navbar ${isScrolled ? 'navbar-scrolled' : ''}`}>
       <div className="container navbar-container">
         {/* Brand Logo */}
-        <a href="#home" onClick={(e) => { e.preventDefault(); scrollToSection('home'); }} className="navbar-logo">
+        <Link to="/" className="navbar-logo" onClick={() => scrollToSection('home')}>
           <div className="logo-icon-wrap">
             <Dumbbell className="logo-icon" size={24} />
           </div>
@@ -52,14 +81,14 @@ export default function Navbar({ serverStatus }) {
             <span className="logo-title">IRON<span className="logo-highlight">FORGE</span></span>
             <span className="logo-subtitle">FITNESS & PERFORMANCE</span>
           </div>
-        </a>
+        </Link>
 
         {/* Desktop Navigation */}
         <nav className="nav-desktop">
           <ul className="nav-links">
             <li>
               <button
-                className={`nav-link ${activeSection === 'home' ? 'active' : ''}`}
+                className={`nav-link ${activeSection === 'home' && isHomePage ? 'active' : ''}`}
                 onClick={() => scrollToSection('home')}
               >
                 Home
@@ -67,7 +96,7 @@ export default function Navbar({ serverStatus }) {
             </li>
             <li>
               <button
-                className={`nav-link ${activeSection === 'about' ? 'active' : ''}`}
+                className={`nav-link ${activeSection === 'about' && isHomePage ? 'active' : ''}`}
                 onClick={() => scrollToSection('about')}
               >
                 About
@@ -75,7 +104,7 @@ export default function Navbar({ serverStatus }) {
             </li>
             <li>
               <button
-                className={`nav-link ${activeSection === 'features' ? 'active' : ''}`}
+                className={`nav-link ${activeSection === 'features' && isHomePage ? 'active' : ''}`}
                 onClick={() => scrollToSection('features')}
               >
                 Features
@@ -83,7 +112,7 @@ export default function Navbar({ serverStatus }) {
             </li>
             <li>
               <button
-                className={`nav-link ${activeSection === 'memberships' ? 'active' : ''}`}
+                className={`nav-link ${activeSection === 'memberships' && isHomePage ? 'active' : ''}`}
                 onClick={() => scrollToSection('memberships')}
               >
                 Plans
@@ -91,7 +120,7 @@ export default function Navbar({ serverStatus }) {
             </li>
             <li>
               <button
-                className={`nav-link ${activeSection === 'trainers' ? 'active' : ''}`}
+                className={`nav-link ${activeSection === 'trainers' && isHomePage ? 'active' : ''}`}
                 onClick={() => scrollToSection('trainers')}
               >
                 Coaches
@@ -99,7 +128,7 @@ export default function Navbar({ serverStatus }) {
             </li>
             <li>
               <button
-                className={`nav-link ${activeSection === 'why-us' ? 'active' : ''}`}
+                className={`nav-link ${activeSection === 'why-us' && isHomePage ? 'active' : ''}`}
                 onClick={() => scrollToSection('why-us')}
               >
                 Why Us
@@ -111,30 +140,65 @@ export default function Navbar({ serverStatus }) {
         {/* Server Status & CTA Actions */}
         <div className="navbar-actions">
           {/* Backend Status Indicator */}
-          <div className={`server-indicator ${serverStatus?.online ? 'status-online' : 'status-offline'}`} title={`Backend API: ${serverStatus?.online ? 'Connected' : 'Connecting'}`}>
+          <div
+            className={`server-indicator ${serverStatus?.online ? 'status-online' : 'status-offline'}`}
+            title={`Backend API: ${serverStatus?.online ? 'Connected' : 'Connecting'}`}
+          >
             <span className="status-dot"></span>
             <span className="status-text">{serverStatus?.online ? 'API Live' : 'API Connecting'}</span>
           </div>
 
-          <Button
-            variant="ghost"
-            size="sm"
-            icon={User}
-            iconPosition="left"
-            onClick={() => scrollToSection('memberships')}
-            className="btn-login-trigger"
-          >
-            Portal
-          </Button>
-
-          <Button
-            variant="primary"
-            size="sm"
-            icon={Sparkles}
-            onClick={() => scrollToSection('memberships')}
-          >
-            Join Now
-          </Button>
+          {isAuthenticated ? (
+            /* Authenticated User Actions */
+            <div className="navbar-user-group">
+              <Link to={getDashboardPath(user?.role)}>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={LayoutDashboard}
+                  iconPosition="left"
+                  className="btn-user-dashboard"
+                >
+                  <span className="user-nav-name">{user?.name?.split(' ')[0]}</span>
+                  <span className="user-nav-role">({user?.role})</span>
+                </Button>
+              </Link>
+              <Button
+                variant="ghost"
+                size="sm"
+                icon={LogOut}
+                onClick={handleLogout}
+                title="Log Out"
+                className="btn-logout"
+              >
+                Logout
+              </Button>
+            </div>
+          ) : (
+            /* Guest Actions */
+            <div className="navbar-guest-group">
+              <Link to="/login">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={User}
+                  iconPosition="left"
+                  className="btn-login-trigger"
+                >
+                  Sign In
+                </Button>
+              </Link>
+              <Link to="/register">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon={Sparkles}
+                >
+                  Join Now
+                </Button>
+              </Link>
+            </div>
+          )}
 
           {/* Mobile Hamburger Button */}
           <button
@@ -172,22 +236,31 @@ export default function Navbar({ serverStatus }) {
           </ul>
 
           <div className="mobile-drawer-footer">
-            <Button
-              variant="outline"
-              fullWidth
-              size="md"
-              onClick={() => scrollToSection('memberships')}
-            >
-              Member Portal
-            </Button>
-            <Button
-              variant="primary"
-              fullWidth
-              size="md"
-              onClick={() => scrollToSection('memberships')}
-            >
-              Start Free Trial
-            </Button>
+            {isAuthenticated ? (
+              <>
+                <Link to={getDashboardPath(user?.role)} onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="primary" fullWidth size="md" icon={LayoutDashboard}>
+                    Open Dashboard ({user?.role})
+                  </Button>
+                </Link>
+                <Button variant="outline" fullWidth size="md" icon={LogOut} onClick={handleLogout}>
+                  Sign Out ({user?.name})
+                </Button>
+              </>
+            ) : (
+              <>
+                <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="outline" fullWidth size="md" icon={User}>
+                    Member / Staff Sign In
+                  </Button>
+                </Link>
+                <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
+                  <Button variant="primary" fullWidth size="md" icon={Sparkles}>
+                    Create Member Account
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>
