@@ -7,9 +7,9 @@ import LandingPage from './pages/landing/LandingPage';
 import LoginPage from './pages/auth/LoginPage';
 import RegisterPage from './pages/auth/RegisterPage';
 import ProtectedRoute from './components/auth/ProtectedRoute';
-import AdminPlaceholder from './pages/placeholders/AdminPlaceholder';
-import TrainerPlaceholder from './pages/placeholders/TrainerPlaceholder';
-import MemberPlaceholder from './pages/placeholders/MemberPlaceholder';
+import AdminDashboard from './pages/admin/AdminDashboard';
+import TrainerDashboard from './pages/trainer/TrainerDashboard';
+import MemberDashboard from './pages/member/MemberDashboard';
 import { checkServerHealth } from './services/api';
 
 // Redirect authenticated users away from Login/Register to their respective dashboard
@@ -83,12 +83,12 @@ function MainApp() {
           }
         />
 
-        {/* Protected Role-Based Routes */}
+        {/* Real Role-Based Dashboards */}
         <Route
           path="/admin"
           element={
             <ProtectedRoute allowedRoles={['admin']}>
-              <AdminPlaceholder />
+              <AdminDashboard />
             </ProtectedRoute>
           }
         />
@@ -96,7 +96,7 @@ function MainApp() {
           path="/trainer"
           element={
             <ProtectedRoute allowedRoles={['trainer']}>
-              <TrainerPlaceholder />
+              <TrainerDashboard />
             </ProtectedRoute>
           }
         />
@@ -104,7 +104,7 @@ function MainApp() {
           path="/member"
           element={
             <ProtectedRoute allowedRoles={['member']}>
-              <MemberPlaceholder />
+              <MemberDashboard />
             </ProtectedRoute>
           }
         />

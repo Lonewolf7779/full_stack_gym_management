@@ -1,0 +1,129 @@
+/* Member Dashboard Styles */
+
+.member-welcome-card {
+  padding: var(--space-2xl);
+  border-radius: var(--radius-xl);
+  margin-bottom: var(--space-2xl);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-lg);
+}
+
+.member-welcome-left {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xl);
+}
+
+.member-avatar-large {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-lg);
+  background: linear-gradient(135deg, #ff6a26 0%, #ff4d00 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  box-shadow: 0 4px 20px rgba(255, 77, 0, 0.35);
+  flex-shrink: 0;
+}
+
+.member-welcome-info h1 {
+  font-size: 1.85rem;
+  margin-bottom: 0.35rem;
+}
+
+.member-dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: var(--space-xl);
+  margin-bottom: var(--space-2xl);
+}
+
+@media (max-width: 992px) {
+  .member-dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.card-title-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-md);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.card-title-header h3 {
+  font-size: 1.3rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Membership Card specifics */
+.membership-plan-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-md);
+}
+
+.membership-plan-name {
+  font-size: 1.6rem;
+}
+
+.days-counter-box {
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-lg);
+}
+
+.days-count-num {
+  font-family: var(--font-heading);
+  font-size: 1.8rem;
+  font-weight: 900;
+  color: #34d399;
+}
+
+.days-count-num.expiring-soon {
+  color: #f87171;
+}
+
+/* Trainer Card specifics */
+.trainer-assigned-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.trainer-card-header-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.trainer-avatar-sm {
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(135deg, #00f2fe 0%, #0099ff 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.trainer-card-header-row h4 {
+  font-size: 1.15rem;
+  margin-bottom: 0.15rem;
+}
