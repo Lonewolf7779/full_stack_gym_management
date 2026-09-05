@@ -1,0 +1,51 @@
+.gym-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  border-radius: var(--radius-full);
+  line-height: 1;
+}
+
+.gym-badge-sm {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.7rem;
+}
+
+.gym-badge-md {
+  padding: 0.35rem 0.85rem;
+  font-size: 0.78rem;
+}
+
+.gym-badge-primary {
+  background: var(--primary-subtle);
+  color: #ff7a3d;
+  border: 1px solid rgba(255, 77, 0, 0.3);
+}
+
+.gym-badge-secondary {
+  background: rgba(0, 229, 255, 0.1);
+  color: var(--secondary);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+}
+
+.gym-badge-success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.gym-badge-warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.gym-badge-outline {
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-medium);
+}

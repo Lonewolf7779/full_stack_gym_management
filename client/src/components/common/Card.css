@@ -1,0 +1,45 @@
+.gym-card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  position: relative;
+  overflow: hidden;
+  transition: all var(--transition-normal);
+}
+
+.gym-card-elevated {
+  background-color: var(--bg-surface-elevated);
+}
+
+/* Padding variants */
+.gym-card-pad-none {
+  padding: 0;
+}
+
+.gym-card-pad-sm {
+  padding: var(--space-md);
+}
+
+.gym-card-pad-normal {
+  padding: var(--space-xl);
+}
+
+.gym-card-pad-lg {
+  padding: var(--space-2xl);
+}
+
+/* Hover effects */
+.gym-card-hover:hover {
+  transform: translateY(-6px);
+  border-color: var(--border-glow);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.45);
+}
+
+.gym-card-glow {
+  border-color: rgba(255, 77, 0, 0.35);
+  box-shadow: 0 0 25px rgba(255, 77, 0, 0.15);
+}
+
+.gym-card-glow:hover {
+  box-shadow: 0 0 35px rgba(255, 77, 0, 0.35);
+}

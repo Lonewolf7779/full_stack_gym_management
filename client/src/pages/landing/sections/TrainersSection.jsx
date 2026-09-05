@@ -1,0 +1,109 @@
+import React from 'react';
+import { Award, Instagram, Linkedin, Dumbbell, Star, Calendar } from 'lucide-react';
+import Card from '../../../components/common/Card';
+import Badge from '../../../components/common/Badge';
+import Button from '../../../components/common/Button';
+
+const trainers = [
+  {
+    id: 1,
+    name: 'Marcus Vance',
+    role: 'Head Strength & Hypertrophy Coach',
+    credentials: 'CSCS, NASM Master Trainer',
+    experience: '9+ Years Experience',
+    rating: '4.9',
+    image: 'https://images.unsplash.com/photo-1567013127542-490d757e51fc?auto=format&fit=crop&w=600&q=80',
+    bio: 'Specializes in progressive overload mechanics, compound lifts, and personalized contest prep for bodybuilders and powerlifters.',
+    specialties: ['Powerlifting', 'Hypertrophy', 'Olympic Lifts'],
+  },
+  {
+    id: 2,
+    name: 'Elena Rostova',
+    role: 'HIIT & Functional Movement Lead',
+    credentials: 'ACSM-CPT, FMS Level 2',
+    experience: '7+ Years Experience',
+    rating: '5.0',
+    image: 'https://images.unsplash.com/photo-1594381898411-846e7d193883?auto=format&fit=crop&w=600&q=80',
+    bio: 'Dedicated to athletic conditioning, agility drills, metabolic conditioning, and mobility recovery for functional longevity.',
+    specialties: ['MetCon', 'Agility', 'Mobility & Rehab'],
+  },
+  {
+    id: 3,
+    name: 'Darius Thorne',
+    role: 'Body Transformation & Calisthenics',
+    credentials: 'ISSA Master Coach, Precision Nutrition',
+    experience: '8+ Years Experience',
+    rating: '4.95',
+    image: 'https://images.unsplash.com/photo-1534367507873-d2d7e24c797f?auto=format&fit=crop&w=600&q=80',
+    bio: 'Focuses on sustainable body recomposition, macro-nutrient balancing, and building raw relative strength through calisthenics.',
+    specialties: ['Body Recomp', 'Nutrition Planning', 'Calisthenics'],
+  },
+];
+
+export default function TrainersSection() {
+  return (
+    <section id="trainers" className="section trainers-section">
+      <div className="container">
+        {/* Section Header */}
+        <div className="section-header">
+          <span className="section-subtitle">MEET THE COACHES</span>
+          <h2 className="section-title">
+            WORLD-CLASS MENTORS DEDICATED TO <span className="text-gradient-orange">YOUR GROWTH.</span>
+          </h2>
+          <p className="section-desc">
+            Our certified trainers bring decades of competitive experience, science-backed methodologies, and relentless energy to your corner.
+          </p>
+        </div>
+
+        {/* Trainers Grid */}
+        <div className="grid-3 trainers-grid">
+          {trainers.map((trainer) => (
+            <Card key={trainer.id} className="trainer-card" hoverEffect={true} padding="none">
+              <div className="trainer-image-container">
+                <img src={trainer.image} alt={trainer.name} className="trainer-img" />
+                <div className="trainer-image-overlay"></div>
+                <div className="trainer-rating-tag">
+                  <Star size={14} className="star-icon" />
+                  <span>{trainer.rating}</span>
+                </div>
+                <div className="trainer-exp-tag">
+                  <span>{trainer.experience}</span>
+                </div>
+              </div>
+
+              <div className="trainer-info-content">
+                <div className="trainer-header">
+                  <h3 className="trainer-name">{trainer.name}</h3>
+                  <span className="trainer-role">{trainer.role}</span>
+                  <span className="trainer-credentials">{trainer.credentials}</span>
+                </div>
+
+                <p className="trainer-bio">{trainer.bio}</p>
+
+                <div className="trainer-specialties">
+                  {trainer.specialties.map((spec, idx) => (
+                    <Badge key={idx} variant="outline" size="sm">
+                      {spec}
+                    </Badge>
+                  ))}
+                </div>
+
+                <div className="trainer-card-footer">
+                  <Button
+                    variant="secondary"
+                    fullWidth
+                    size="sm"
+                    icon={Calendar}
+                    onClick={() => alert(`Consultation with ${trainer.name} will be available once member booking is linked.`)}
+                  >
+                    Request 1-on-1 Session
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
