@@ -5,9 +5,14 @@ const { successResponse } = require('./apiResponse');
  * Generate a signed JWT token
  */
 const generateToken = (userId, role) => {
+  const jwtSecret = process.env.JWT_SECRET;
+  if (!jwtSecret) {
+    throw new Error('Server configuration error: JWT_SECRET environment variable is missing.');
+  }
+
   return jwt.sign(
     { id: userId, role },
-    process.env.JWT_SECRET || 'gym_secret_jwt_key_2026_secure_token',
+    jwtSecret,
     {
       expiresIn: process.env.JWT_EXPIRES_IN || '7d',
     }

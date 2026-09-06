@@ -30,11 +30,13 @@ const protect = async (req, res, next) => {
       );
     }
 
+    const jwtSecret = process.env.JWT_SECRET;
+    if (!jwtSecret) {
+      return errorResponse(res, 'Server authentication configuration error.', null, 500);
+    }
+
     // Verify token
-    const decoded = jwt.verify(
-      token,
-      process.env.JWT_SECRET || 'gym_secret_jwt_key_2026_secure_token'
-    );
+    const decoded = jwt.verify(token, jwtSecret);
 
     // Find user by ID in token
     const user = await User.findById(decoded.id).select('-password');

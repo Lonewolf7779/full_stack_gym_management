@@ -1,4 +1,5 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Award, Instagram, Linkedin, Dumbbell, Star, Calendar } from 'lucide-react';
 import Card from '../../../components/common/Card';
 import Badge from '../../../components/common/Badge';
@@ -41,41 +42,55 @@ const trainers = [
 ];
 
 export default function TrainersSection() {
+  const navigate = useNavigate();
+
   return (
     <section id="trainers" className="section trainers-section">
       <div className="container">
         {/* Section Header */}
         <div className="section-header">
-          <span className="section-subtitle">MEET THE COACHES</span>
+          <span className="section-subtitle">ELITE COACHING ROSTER</span>
           <h2 className="section-title">
-            WORLD-CLASS MENTORS DEDICATED TO <span className="text-gradient-orange">YOUR GROWTH.</span>
+            TRAIN WITH <span className="text-gradient-orange">CERTIFIED EXPERTS.</span>
           </h2>
           <p className="section-desc">
-            Our certified trainers bring decades of competitive experience, science-backed methodologies, and relentless energy to your corner.
+            Our coaching staff blends master biomechanics credentials with real-world athletic competition experience.
           </p>
         </div>
 
         {/* Trainers Grid */}
         <div className="grid-3 trainers-grid">
           {trainers.map((trainer) => (
-            <Card key={trainer.id} className="trainer-card" hoverEffect={true} padding="none">
+            <Card key={trainer.id} hover className="trainer-card">
               <div className="trainer-image-container">
-                <img src={trainer.image} alt={trainer.name} className="trainer-img" />
+                <img
+                  src={trainer.image}
+                  alt={trainer.name}
+                  className="trainer-image"
+                  loading="lazy"
+                />
                 <div className="trainer-image-overlay"></div>
-                <div className="trainer-rating-tag">
-                  <Star size={14} className="star-icon" />
-                  <span>{trainer.rating}</span>
-                </div>
-                <div className="trainer-exp-tag">
+                <div className="trainer-experience-badge">
+                  <Award size={14} />
                   <span>{trainer.experience}</span>
                 </div>
               </div>
 
-              <div className="trainer-info-content">
+              <div className="trainer-content">
                 <div className="trainer-header">
-                  <h3 className="trainer-name">{trainer.name}</h3>
-                  <span className="trainer-role">{trainer.role}</span>
-                  <span className="trainer-credentials">{trainer.credentials}</span>
+                  <div className="trainer-title-area">
+                    <h3 className="trainer-name">{trainer.name}</h3>
+                    <p className="trainer-role">{trainer.role}</p>
+                  </div>
+                  <div className="trainer-rating">
+                    <Star size={15} className="star-icon" />
+                    <span>{trainer.rating}</span>
+                  </div>
+                </div>
+
+                <div className="trainer-credentials">
+                  <span className="credential-label">CREDENTIALS:</span>
+                  <span className="credential-text">{trainer.credentials}</span>
                 </div>
 
                 <p className="trainer-bio">{trainer.bio}</p>
@@ -94,7 +109,7 @@ export default function TrainersSection() {
                     fullWidth
                     size="sm"
                     icon={Calendar}
-                    onClick={() => alert(`Consultation with ${trainer.name} will be available once member booking is linked.`)}
+                    onClick={() => navigate('/register')}
                   >
                     Request 1-on-1 Session
                   </Button>

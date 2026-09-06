@@ -40,7 +40,7 @@ function assert(condition, message) {
 
 async function runTests() {
   console.log('\n==================================================');
-  console.log('💳 RUNNING PHASE 8: PAYMENTS & BILLING TEST SUITE');
+  console.log('💳 RUNNING PHASE 8: PAYMENTS & BILLING HARDENED TEST SUITE');
   console.log('==================================================\n');
 
   const timestamp = Date.now();
@@ -189,6 +189,13 @@ async function runTests() {
   );
   assert(invalidPlanOrder.status === 404, '30. Non-existent plan rejected with HTTP 404');
 
+  // Invalid plan ObjectId format -> 400
+  const malformedPlanOrder = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/create-order', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: freshMemberCookie } },
+    { planId: 'invalid-id-format' }
+  );
+  assert(malformedPlanOrder.status === 400, '31. Malformed plan ObjectId rejected with HTTP 400');
+
   // --- SECTION 5: HMAC-SHA256 SIGNATURE VERIFICATION ---
   console.log('\n--- SECTION 5: HMAC-SHA256 Signature Verification & Membership Fulfillment ---');
 
@@ -203,10 +210,20 @@ async function runTests() {
       razorpay_signature: 'fake_tampered_signature_hex_string_12345'
     }
   );
-  assert(badVerify.status === 400, '31. Tampered signature rejected with HTTP 400');
-  assert(badVerify.data.success === false, '32. Verification failure response');
+  assert(badVerify.status === 400, '32. Tampered signature rejected with HTTP 400');
+  assert(badVerify.data.success === false, '33. Verification failure response');
 
-  // 2. Submit AUTHENTIC HMAC-SHA256 signature
+  // 2. Submit Missing Parameter -> 400 Bad Request
+  const missingParamVerify = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/verify', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: freshMemberCookie } },
+    {
+      razorpay_order_id: createdOrderId,
+      razorpay_signature: 'sig_only'
+    }
+  );
+  assert(missingParamVerify.status === 400, '34. Verification with missing paymentId rejected with HTTP 400');
+
+  // 3. Submit AUTHENTIC HMAC-SHA256 signature
   const validSignature = crypto
     .createHmac('sha256', RAZORPAY_SECRET)
     .update(`${createdOrderId}|${fakePaymentId}`)
@@ -220,22 +237,22 @@ async function runTests() {
       razorpay_signature: validSignature
     }
   );
-  assert(goodVerify.status === 200, '33. Authentic HMAC-SHA256 signature accepted with HTTP 200');
-  assert(goodVerify.data.data.payment.status === 'paid', '34. Payment status transitioned to "paid"');
-  assert(goodVerify.data.data.payment.paidAt !== null, '35. paidAt timestamp recorded');
+  assert(goodVerify.status === 200, '35. Authentic HMAC-SHA256 signature accepted with HTTP 200');
+  assert(goodVerify.data.data.payment.status === 'paid', '36. Payment status transitioned to "paid"');
+  assert(goodVerify.data.data.payment.paidAt !== null, '37. paidAt timestamp recorded');
 
-  // 3. Verify Member Membership was automatically fulfilled
+  // 4. Verify Member Membership was automatically fulfilled
   const checkMemberProfile = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/members/me/profile', method: 'GET', headers: { Cookie: freshMemberCookie } }
   );
-  assert(checkMemberProfile.status === 200, '36. Member profile retrieved');
+  assert(checkMemberProfile.status === 200, '38. Member profile retrieved');
   const updatedMember = checkMemberProfile.data.data.member;
-  assert(updatedMember.status === 'active', '37. Member status updated to "active"');
-  assert(updatedMember.membershipPlan?._id?.toString() === testPlan._id.toString() || updatedMember.membershipPlan?.toString() === testPlan._id.toString(), '38. Member membershipPlan set to purchased plan');
-  assert(updatedMember.membershipStartDate !== null, '39. Member membershipStartDate initialized');
-  assert(updatedMember.membershipEndDate !== null, '40. Member membershipEndDate calculated properly');
+  assert(updatedMember.status === 'active', '39. Member status updated to "active"');
+  assert(updatedMember.membershipPlan?._id?.toString() === testPlan._id.toString() || updatedMember.membershipPlan?.toString() === testPlan._id.toString(), '40. Member membershipPlan set to purchased plan');
+  assert(updatedMember.membershipStartDate !== null, '41. Member membershipStartDate initialized');
+  assert(updatedMember.membershipEndDate !== null, '42. Member membershipEndDate calculated properly');
 
-  // 4. Verify Idempotent repeat verification on already paid order -> 200 OK
+  // 5. Verify Idempotent repeat verification on already paid order -> 200 OK without duplicate fulfillment
   const repeatVerify = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments/verify', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: freshMemberCookie } },
     {
@@ -244,7 +261,29 @@ async function runTests() {
       razorpay_signature: validSignature
     }
   );
-  assert(repeatVerify.status === 200, '41. Duplicate verification call handled idempotently with HTTP 200');
+  assert(repeatVerify.status === 200, '43. Duplicate verification call handled idempotently with HTTP 200');
+  assert(repeatVerify.data.data.alreadyProcessed === true, '44. Response confirms payment was already processed');
+
+  // 6. Adversarial Attack: Attempting to credit an already used payment ID to a NEW order -> 400
+  const secondOrderRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/create-order', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: freshMemberCookie } },
+    { planId: testPlan._id }
+  );
+  const secondOrderId = secondOrderRes.data.data.orderId;
+  const reusedSig = crypto
+    .createHmac('sha256', RAZORPAY_SECRET)
+    .update(`${secondOrderId}|${fakePaymentId}`)
+    .digest('hex');
+
+  const reusedPaymentIdTry = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/verify', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: freshMemberCookie } },
+    {
+      razorpay_order_id: secondOrderId,
+      razorpay_payment_id: fakePaymentId, // Reusing previous payment ID
+      razorpay_signature: reusedSig
+    }
+  );
+  assert(reusedPaymentIdTry.status === 400, '45. Reusing previous payment ID on new order rejected with HTTP 400');
 
   // --- SECTION 6: WEBHOOK SIGNATURE & IDEMPOTENCY ---
   console.log('\n--- SECTION 6: Raw-Body Webhooks & Event Idempotency ---');
@@ -254,7 +293,7 @@ async function runTests() {
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments/create-order', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: freshMemberCookie } },
     { planId: testPlan._id, purpose: 'renewal' }
   );
-  assert(webhookOrderRes.status === 201, '42. Secondary order created for webhook test');
+  assert(webhookOrderRes.status === 201, '46. Secondary order created for webhook test');
   const webhookOrderId = webhookOrderRes.data.data.orderId;
   const webhookPaymentId = `pay_wh_${timestamp}`;
 
@@ -291,9 +330,22 @@ async function runTests() {
     },
     webhookPayload
   );
-  assert(badWebhook.status === 400, '43. Invalid webhook signature rejected with HTTP 400');
+  assert(badWebhook.status === 400, '47. Invalid webhook signature rejected with HTTP 400');
 
-  // 2. Webhook with valid signature
+  // 2. Webhook with missing signature -> 400
+  const missingSigWebhook = await request(
+    {
+      hostname: '127.0.0.1',
+      port: 5000,
+      path: '/api/payments/webhook',
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    },
+    webhookPayload
+  );
+  assert(missingSigWebhook.status === 400, '48. Webhook without signature header rejected with HTTP 400');
+
+  // 3. Webhook with valid signature
   const validWebhookSig = crypto
     .createHmac('sha256', RAZORPAY_WEBHOOK_SECRET)
     .update(webhookPayload)
@@ -313,10 +365,10 @@ async function runTests() {
     },
     webhookPayload
   );
-  assert(goodWebhook.status === 200, '44. Valid webhook accepted with HTTP 200');
-  assert(goodWebhook.data.data.received === true, '45. Webhook response confirms receipt');
+  assert(goodWebhook.status === 200, '49. Valid webhook accepted with HTTP 200');
+  assert(goodWebhook.data.data.received === true, '50. Webhook response confirms receipt');
 
-  // 3. Webhook idempotency: send same event again -> 200 with idempotent message
+  // 4. Webhook idempotency: send same event again -> 200 with idempotent message
   const dupWebhook = await request(
     {
       hostname: '127.0.0.1',
@@ -331,22 +383,58 @@ async function runTests() {
     },
     webhookPayload
   );
-  assert(dupWebhook.status === 200, '46. Duplicate webhook event handled idempotently with HTTP 200');
-  assert(dupWebhook.data.message.includes('idempotent'), '47. Response message indicates idempotent handling');
+  assert(dupWebhook.status === 200, '51. Duplicate webhook event handled idempotently with HTTP 200');
+  assert(dupWebhook.data.message.includes('idempotent'), '52. Response message indicates idempotent handling');
 
-  // --- SECTION 7: ADMIN MANUAL PAYMENTS (CASH, UPI, CARD) ---
-  console.log('\n--- SECTION 7: Admin Manual Offline Payments ---');
+  // --- SECTION 7: ADMIN MANUAL PAYMENTS (CASH, UPI, CARD) & VALIDATION ---
+  console.log('\n--- SECTION 7: Admin Manual Offline Payments & Amount Validation ---');
 
-  // Find a member for manual payment (distinct from fresh member to test cross-access isolation)
+  // Find a distinct target member
   const membersList = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/members', method: 'GET', headers: { Cookie: adminCookie } }
   );
-  assert(membersList.status === 200, '48. Admin retrieved members list');
+  assert(membersList.status === 200, '53. Admin retrieved members list');
   const targetMember = membersList.data.data.members.find(m => m.user?.email === 'member@ironforge.test') || 
                        membersList.data.data.members.find(m => m.user?.email !== freshEmail);
-  assert(targetMember !== undefined, 'Found distinct target member for manual payment');
+  assert(targetMember !== undefined, '54. Found distinct target member for manual payment');
 
-  // Record Cash Payment
+  // Adversarial Amount Tests:
+  // 1. Amount = 0 -> 400
+  const zeroAmountPay = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { memberId: targetMember._id, planId: testPlan._id, amount: 0, paymentMethod: 'cash' }
+  );
+  assert(zeroAmountPay.status === 400, '55. Manual payment with amount = 0 rejected with HTTP 400');
+
+  // 2. Amount = -1 -> 400
+  const negativeAmountPay = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { memberId: targetMember._id, planId: testPlan._id, amount: -500, paymentMethod: 'cash' }
+  );
+  assert(negativeAmountPay.status === 400, '56. Manual payment with negative amount rejected with HTTP 400');
+
+  // 3. Amount = "abc" (non-numeric) -> 400
+  const nonNumericAmountPay = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { memberId: targetMember._id, planId: testPlan._id, amount: "abc", paymentMethod: 'cash' }
+  );
+  assert(nonNumericAmountPay.status === 400, '57. Manual payment with non-numeric amount rejected with HTTP 400');
+
+  // 4. Invalid paymentMethod -> 400
+  const invalidMethodPay = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { memberId: targetMember._id, planId: testPlan._id, amount: 1000, paymentMethod: 'bitcoin' }
+  );
+  assert(invalidMethodPay.status === 400, '58. Manual payment with invalid paymentMethod rejected with HTTP 400');
+
+  // 5. Missing memberId -> 400
+  const badManual = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { planId: testPlan._id, amount: 500, paymentMethod: 'cash' }
+  );
+  assert(badManual.status === 400, '59. Manual payment without memberId rejected with HTTP 400');
+
+  // Valid Cash Payment
   const manualCash = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
     {
@@ -357,14 +445,14 @@ async function runTests() {
       notes: 'Test cash receipt at front desk'
     }
   );
-  assert(manualCash.status === 201, '49. Admin recorded manual Cash payment (HTTP 201)');
-  assert(manualCash.data.data.payment.status === 'paid', '50. Manual payment is immediately status "paid"');
-  assert(manualCash.data.data.payment.paymentMethod === 'cash', '51. Payment method stored as "cash"');
-  assert(manualCash.data.data.payment.receiptNumber.startsWith('REC-'), '52. Receipt number format is REC-XXXXXX');
+  assert(manualCash.status === 201, '60. Admin recorded manual Cash payment (HTTP 201)');
+  assert(manualCash.data.data.payment.status === 'paid', '61. Manual payment is immediately status "paid"');
+  assert(manualCash.data.data.payment.paymentMethod === 'cash', '62. Payment method stored as "cash"');
+  assert(manualCash.data.data.payment.receiptNumber.startsWith('REC-'), '63. Receipt number format is REC-XXXXXX');
 
   const manualPaymentId = manualCash.data.data.payment._id;
 
-  // Record UPI Payment
+  // Valid UPI Payment
   const manualUpi = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
     {
@@ -375,15 +463,8 @@ async function runTests() {
       notes: 'Test UPI QR scan transaction'
     }
   );
-  assert(manualUpi.status === 201, '53. Admin recorded manual UPI payment (HTTP 201)');
-  assert(manualUpi.data.data.payment.paymentMethod === 'upi', '54. Payment method stored as "upi"');
-
-  // Validation: Missing memberId -> 400
-  const badManual = await request(
-    { hostname: '127.0.0.1', port: 5000, path: '/api/payments/manual', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
-    { planId: testPlan._id, amount: 500, paymentMethod: 'cash' }
-  );
-  assert(badManual.status === 400, '55. Manual payment without memberId rejected with HTTP 400');
+  assert(manualUpi.status === 201, '64. Admin recorded manual UPI payment (HTTP 201)');
+  assert(manualUpi.data.data.payment.paymentMethod === 'upi', '65. Payment method stored as "upi"');
 
   // --- SECTION 8: MEMBER PAYMENT ISOLATION & AUDITING ---
   console.log('\n--- SECTION 8: Member History & Cross-Account Isolation ---');
@@ -392,20 +473,26 @@ async function runTests() {
   const myPaymentsRes = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments/my-payments', method: 'GET', headers: { Cookie: freshMemberCookie } }
   );
-  assert(myPaymentsRes.status === 200, '56. Member fetched personal payment history');
-  assert(myPaymentsRes.data.data.payments.length >= 1, '57. History contains member payments');
+  assert(myPaymentsRes.status === 200, '66. Member fetched personal payment history');
+  assert(myPaymentsRes.data.data.payments.length >= 1, '67. History contains member payments');
 
   // Member fetches their own single payment
   const mySinglePayment = await request(
     { hostname: '127.0.0.1', port: 5000, path: `/api/payments/${createdPaymentDocId}`, method: 'GET', headers: { Cookie: freshMemberCookie } }
   );
-  assert(mySinglePayment.status === 200, '58. Member retrieved own payment detail');
+  assert(mySinglePayment.status === 200, '68. Member retrieved own payment detail');
 
   // Member attempts to fetch another member's payment -> 403 Forbidden
   const otherMemberTryAccess = await request(
     { hostname: '127.0.0.1', port: 5000, path: `/api/payments/${manualPaymentId}`, method: 'GET', headers: { Cookie: freshMemberCookie } }
   );
-  assert(otherMemberTryAccess.status === 403, '59. Member blocked from accessing another athlete payment receipt (HTTP 403)');
+  assert(otherMemberTryAccess.status === 403, '69. Member blocked from accessing another athlete payment receipt (HTTP 403)');
+
+  // Trainer attempts to access single payment receipt -> 403 Forbidden
+  const trainerTryReceipt = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/payments/${manualPaymentId}`, method: 'GET', headers: { Cookie: trainerCookie } }
+  );
+  assert(trainerTryReceipt.status === 403, '70. Trainer blocked from accessing payment receipt (HTTP 403)');
 
   // --- SECTION 9: ADMIN STATS, FILTERS, NOTES & REFERENCE INTEGRITY ---
   console.log('\n--- SECTION 9: Admin Analytics, Filters, Notes & Reference Protection ---');
@@ -414,48 +501,48 @@ async function runTests() {
   const adminStats = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments/stats', method: 'GET', headers: { Cookie: adminCookie } }
   );
-  assert(adminStats.status === 200, '60. Admin retrieved payment stats');
-  assert(adminStats.data.data.stats.totalRevenue > 0, '61. Stats totalRevenue is greater than 0');
-  assert(adminStats.data.data.stats.paidTransactions >= 1, '62. Stats paidTransactions is greater than or equal to 1');
+  assert(adminStats.status === 200, '71. Admin retrieved payment stats');
+  assert(adminStats.data.data.stats.totalRevenue > 0, '72. Stats totalRevenue is greater than 0');
+  assert(adminStats.data.data.stats.paidTransactions >= 1, '73. Stats paidTransactions is greater than or equal to 1');
 
   // Admin filter by status
   const filterPaid = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments?status=paid', method: 'GET', headers: { Cookie: adminCookie } }
   );
-  assert(filterPaid.status === 200, '63. Admin filtered payments by status=paid');
-  assert(filterPaid.data.data.payments.every(p => p.status === 'paid'), '64. All filtered payments have status "paid"');
+  assert(filterPaid.status === 200, '74. Admin filtered payments by status=paid');
+  assert(filterPaid.data.data.payments.every(p => p.status === 'paid'), '75. All filtered payments have status "paid"');
 
   // Admin filter by paymentMethod
   const filterCash = await request(
     { hostname: '127.0.0.1', port: 5000, path: '/api/payments?paymentMethod=cash', method: 'GET', headers: { Cookie: adminCookie } }
   );
-  assert(filterCash.status === 200, '65. Admin filtered payments by paymentMethod=cash');
-  assert(filterCash.data.data.payments.every(p => p.paymentMethod === 'cash'), '66. All filtered payments have method "cash"');
+  assert(filterCash.status === 200, '76. Admin filtered payments by paymentMethod=cash');
+  assert(filterCash.data.data.payments.every(p => p.paymentMethod === 'cash'), '77. All filtered payments have method "cash"');
 
   // Admin update payment notes
   const updateNotes = await request(
     { hostname: '127.0.0.1', port: 5000, path: `/api/payments/${manualPaymentId}/notes`, method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
     { notes: 'Updated notes via audit process' }
   );
-  assert(updateNotes.status === 200, '67. Admin updated payment notes');
-  assert(updateNotes.data.data.payment.notes === 'Updated notes via audit process', '68. Notes updated in payment document');
+  assert(updateNotes.status === 200, '78. Admin updated payment notes');
+  assert(updateNotes.data.data.payment.notes === 'Updated notes via audit process', '79. Notes updated in payment document');
 
   // Member trying to update notes -> 403
   const memberTryUpdateNotes = await request(
     { hostname: '127.0.0.1', port: 5000, path: `/api/payments/${manualPaymentId}/notes`, method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: freshMemberCookie } },
     { notes: 'Hacker note' }
   );
-  assert(memberTryUpdateNotes.status === 403, '69. Member denied updating payment notes (HTTP 403)');
+  assert(memberTryUpdateNotes.status === 403, '80. Member denied updating payment notes (HTTP 403)');
 
   // Reference Integrity: Attempting to delete a member who has payments must fail with 409 Conflict
   const tryDeleteMember = await request(
     { hostname: '127.0.0.1', port: 5000, path: `/api/members/${targetMember._id}`, method: 'DELETE', headers: { Cookie: adminCookie } }
   );
-  assert(tryDeleteMember.status === 409, '70. Deleting member with payment history rejected with HTTP 409 Conflict');
-  assert(tryDeleteMember.data.message.includes('payment records'), '71. Conflict message clearly references payment records');
+  assert(tryDeleteMember.status === 409, '81. Deleting member with payment history rejected with HTTP 409 Conflict');
+  assert(tryDeleteMember.data.message.includes('payment records'), '82. Conflict message clearly references payment records');
 
   console.log('\n==================================================');
-  console.log(`🎉 ALL ${passedCount}/${totalCount} PHASE 8 TESTS PASSED SUCCESSFULLY!`);
+  console.log(`🎉 ALL ${passedCount}/${totalCount} PHASE 8 HARDENED TESTS PASSED SUCCESSFULLY!`);
   console.log('==================================================\n');
 }
 

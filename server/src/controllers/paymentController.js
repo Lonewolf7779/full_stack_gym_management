@@ -170,8 +170,8 @@ const createRazorpayOrder = async (req, res) => {
 
     // Authoritative Price from DB - Ignore any client supplied amount
     const authoritativeAmount = Number(plan.price);
-    if (isNaN(authoritativeAmount) || authoritativeAmount <= 0) {
-      return errorResponse(res, 'Authoritative plan price is invalid', null, 400);
+    if (!Number.isFinite(authoritativeAmount) || authoritativeAmount <= 0) {
+      return errorResponse(res, 'Authoritative plan price is invalid and must be greater than 0', null, 400);
     }
 
     // Generate unique receipt number
@@ -285,7 +285,7 @@ const verifyPayment = async (req, res) => {
       );
     }
 
-    // Idempotency: If already marked paid, return immediately without duplicate fulfillment
+    // Idempotency: If already marked paid with same details, return immediately without duplicate fulfillment
     if (payment.status === 'paid') {
       const currentMember = await Member.findById(payment.member).populate('membershipPlan');
       return successResponse(res, 'Payment has already been verified and processed', {
@@ -293,6 +293,16 @@ const verifyPayment = async (req, res) => {
         member: currentMember,
         alreadyProcessed: true,
       });
+    }
+
+    // Guard against payment transaction ID re-use across distinct orders
+    const existingPaidTx = await Payment.findOne({
+      razorpayPaymentId: razorpay_payment_id,
+      _id: { $ne: payment._id },
+      status: 'paid',
+    });
+    if (existingPaidTx) {
+      return errorResponse(res, 'This Razorpay payment transaction ID has already been credited to another order.', null, 400);
     }
 
     // Mark payment as paid
@@ -433,17 +443,28 @@ const recordManualPayment = async (req, res) => {
     }
 
     // Determine amount: explicit amount or fallback to plan price
-    let finalAmount = Number(amount);
-    if (isNaN(finalAmount) || finalAmount <= 0) {
-      if (plan && plan.price > 0) {
-        finalAmount = Number(plan.price);
-      } else {
-        return errorResponse(res, 'Please provide a valid payment amount greater than 0', null, 400);
+    let finalAmount;
+    if (amount !== undefined && amount !== null && amount !== '') {
+      const parsedAmount = Number(amount);
+      if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
+        return errorResponse(res, 'Payment amount must be a valid positive number greater than 0', null, 400);
       }
+      finalAmount = parsedAmount;
+    } else if (plan) {
+      const planPrice = Number(plan.price);
+      if (!Number.isFinite(planPrice) || planPrice <= 0) {
+        return errorResponse(res, 'Authoritative plan price must be a valid positive number', null, 400);
+      }
+      finalAmount = planPrice;
+    } else {
+      return errorResponse(res, 'Payment amount is required and must be a positive number', null, 400);
     }
 
     const validMethods = ['cash', 'upi', 'card', 'bank_transfer', 'other'];
-    const method = validMethods.includes(paymentMethod) ? paymentMethod : 'cash';
+    if (paymentMethod && !validMethods.includes(paymentMethod)) {
+      return errorResponse(res, `Invalid payment method '${paymentMethod}'. Supported methods: ${validMethods.join(', ')}`, null, 400);
+    }
+    const method = paymentMethod || 'cash';
 
     const finalReceiptNumber = receiptNumber?.trim() || generateReceiptNumber('REC-MAN');
 

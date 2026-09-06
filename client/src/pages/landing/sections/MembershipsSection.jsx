@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Check, Zap, Sparkles, Shield, ArrowRight } from 'lucide-react';
 import Card from '../../../components/common/Card';
 import Button from '../../../components/common/Button';
@@ -70,6 +71,7 @@ const plans = [
 ];
 
 export default function MembershipsSection() {
+  const navigate = useNavigate();
   const [billingCycle, setBillingCycle] = useState('monthly'); // 'monthly' | 'annual'
 
   return (
@@ -167,7 +169,7 @@ export default function MembershipsSection() {
                     fullWidth
                     size="lg"
                     icon={ArrowRight}
-                    onClick={() => alert(`Selected plan: ${plan.name} ($${price}/mo). Registration & authentication will be enabled in Phase 3.`)}
+                    onClick={() => navigate('/register')}
                   >
                     Select {plan.name}
                   </Button>
