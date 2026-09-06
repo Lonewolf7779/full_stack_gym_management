@@ -61,12 +61,12 @@ export default function TrainersSection() {
         {/* Trainers Grid */}
         <div className="grid-3 trainers-grid">
           {trainers.map((trainer) => (
-            <Card key={trainer.id} hover className="trainer-card">
+            <Card key={trainer.id} padding="none" hover className="trainer-card">
               <div className="trainer-image-container">
                 <img
                   src={trainer.image}
                   alt={trainer.name}
-                  className="trainer-image"
+                  className={`trainer-image trainer-image-${trainer.id}`}
                   loading="lazy"
                 />
                 <div className="trainer-image-overlay"></div>

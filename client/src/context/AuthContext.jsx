@@ -14,7 +14,9 @@ export const AuthProvider = ({ children }) => {
       const currentUser = await authApi.getCurrentUser();
       setUser(currentUser);
     } catch (err) {
-      console.warn('[AuthContext] Session restore check:', err.message);
+      if (err && err.message && !err.message.includes('401')) {
+        console.warn('[AuthContext] Session restore check:', err.message);
+      }
       setUser(null);
     } finally {
       setLoading(false);

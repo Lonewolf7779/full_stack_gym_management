@@ -288,6 +288,97 @@
   }
 }
 
+@media (max-width: 640px) {
+  .navbar-container {
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+
+  .server-indicator .status-text {
+    display: none;
+  }
+
+  .server-indicator {
+    padding: 0.35rem 0.5rem;
+    gap: 0;
+  }
+
+  .navbar-logo .logo-subtitle {
+    display: none;
+  }
+
+  .navbar-logo .logo-icon-wrap {
+    width: 36px;
+    height: 36px;
+  }
+
+  .navbar-logo .logo-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .navbar-logo .logo-title {
+    font-size: 1.2rem;
+  }
+
+  .navbar-actions {
+    gap: 0.5rem;
+  }
+
+  .notification-dropdown {
+    width: calc(100vw - 20px);
+    max-width: 350px;
+    right: -10px;
+  }
+}
+
+@media (max-width: 440px) {
+  .navbar {
+    height: 68px;
+  }
+
+  .navbar-logo {
+    gap: 0.5rem;
+  }
+
+  .navbar-logo .logo-icon-wrap {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+  }
+
+  .navbar-logo .logo-icon {
+    width: 18px;
+    height: 18px;
+  }
+
+  .navbar-logo .logo-title {
+    font-size: 1.05rem;
+  }
+
+  .server-indicator {
+    display: none;
+  }
+
+  .navbar-guest-group .gym-btn {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-user-dashboard {
+    padding: 0.35rem 0.65rem;
+    font-size: 0.75rem;
+  }
+
+  .btn-user-dashboard .user-nav-role {
+    display: none;
+  }
+
+  .mobile-toggle {
+    padding: 0.3rem;
+  }
+}
+
 /* ==========================================================================
    Phase 10: Notification Bell & Dropdown Panel
    ========================================================================== */

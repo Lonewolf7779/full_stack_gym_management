@@ -91,24 +91,32 @@ export const authApi = {
   },
 
   getCurrentUser: async () => {
-    const response = await fetch(`${API_BASE_URL}/auth/me`, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-      credentials: 'include',
-    });
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/me`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+        },
+        credentials: 'include',
+      });
 
-    if (!response.ok) {
-      if (response.status === 401) {
+      if (!response.ok) {
+        if (response.status === 401) {
+          // Expected unauthenticated guest state
+          return null;
+        }
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.message || `Failed to fetch session (${response.status})`);
+      }
+
+      const data = await response.json();
+      return data.data?.user || null;
+    } catch (err) {
+      if (err.message && err.message.includes('401')) {
         return null;
       }
-      const data = await response.json().catch(() => ({}));
-      throw new Error(data.message || 'Failed to fetch session');
+      throw err;
     }
-
-    const data = await response.json();
-    return data.data?.user || null;
   },
 };
 
