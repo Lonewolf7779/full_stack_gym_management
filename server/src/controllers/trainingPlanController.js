@@ -1,7 +1,55 @@
+const mongoose = require('mongoose');
 const TrainingPlan = require('../models/TrainingPlan');
 const Member = require('../models/Member');
 const Trainer = require('../models/Trainer');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
+
+/**
+ * Helper to normalize and format training plan exercises
+ * Prevents NaN and ensures proper defaults (restTime = 60 if omitted, preserving 0)
+ */
+const formatPlanExercises = (exercises) => {
+  if (!Array.isArray(exercises)) return [];
+  return exercises
+    .filter((e) => e && (e.exercise || e._id))
+    .map((e, index) => {
+      const sets =
+        e.sets !== undefined && e.sets !== null && e.sets !== '' && !isNaN(Number(e.sets))
+          ? Number(e.sets)
+          : 3;
+      const reps =
+        e.reps !== undefined && e.reps !== null && e.reps !== '' && !isNaN(Number(e.reps))
+          ? Number(e.reps)
+          : 10;
+      const duration =
+        e.duration !== undefined && e.duration !== null && e.duration !== '' && !isNaN(Number(e.duration))
+          ? Number(e.duration)
+          : 0;
+      const restTime =
+        e.restTime !== undefined && e.restTime !== null && e.restTime !== '' && !isNaN(Number(e.restTime))
+          ? Number(e.restTime)
+          : 60;
+      const targetWeight =
+        e.targetWeight !== undefined && e.targetWeight !== null && e.targetWeight !== '' && !isNaN(Number(e.targetWeight))
+          ? Number(e.targetWeight)
+          : 0;
+      const order =
+        e.order !== undefined && e.order !== null && e.order !== '' && !isNaN(Number(e.order))
+          ? Number(e.order)
+          : index + 1;
+
+      return {
+        exercise: e.exercise || e._id,
+        sets: Math.max(1, sets),
+        reps: Math.max(0, reps),
+        duration: Math.max(0, duration),
+        restTime: Math.max(0, restTime),
+        targetWeight: Math.max(0, targetWeight),
+        instructions: typeof e.instructions === 'string' ? e.instructions.trim() : '',
+        order,
+      };
+    });
+};
 
 /**
  * @desc    Get training plans (RBAC filtered)
@@ -222,39 +270,50 @@ const createTrainingPlan = async (req, res, next) => {
       finalTrainerId = trainerDoc._id;
     } else if (req.user.role === 'admin') {
       if (trainerId) {
-        finalTrainerId = trainerId;
+        if (!mongoose.Types.ObjectId.isValid(trainerId)) {
+          return errorResponse(res, 'Selected trainer does not exist.', null, 400);
+        }
+        const trainerDoc = await Trainer.findById(trainerId);
+        if (!trainerDoc) {
+          return errorResponse(res, 'Selected trainer does not exist.', null, 404);
+        }
+        if (trainerDoc.status !== 'active') {
+          return errorResponse(
+            res,
+            'Selected trainer is inactive. Please choose an active trainer.',
+            null,
+            400
+          );
+        }
+        finalTrainerId = trainerDoc._id;
       } else if (memberDoc.assignedTrainer) {
-        finalTrainerId = memberDoc.assignedTrainer;
+        const assignedTrainerDoc = await Trainer.findById(memberDoc.assignedTrainer);
+        if (assignedTrainerDoc && assignedTrainerDoc.status === 'active') {
+          finalTrainerId = assignedTrainerDoc._id;
+        } else {
+          const anyTrainer = await Trainer.findOne({ status: 'active' });
+          if (anyTrainer) {
+            finalTrainerId = anyTrainer._id;
+          } else {
+            return errorResponse(res, 'No active trainer available. Please assign a trainer first.', null, 400);
+          }
+        }
       } else {
-        // Find any active trainer or require trainerId
         const anyTrainer = await Trainer.findOne({ status: 'active' });
         if (anyTrainer) {
           finalTrainerId = anyTrainer._id;
         } else {
-          return errorResponse(res, 'No trainer available. Please assign a trainer first.', null, 400);
+          return errorResponse(res, 'No active trainer available. Please assign a trainer first.', null, 400);
         }
       }
     }
 
-    // Format exercise array
-    const formattedExercises = Array.isArray(exercises)
-      ? exercises
-          .filter((e) => e && (e.exercise || e._id))
-          .map((e, index) => ({
-            exercise: e.exercise || e._id,
-            sets: Number(e.sets) || 3,
-            reps: Number(e.reps) || 10,
-            duration: Number(e.duration) || 0,
-            restTime: Number(e.restTime) !== undefined ? Number(e.restTime) : 60,
-            targetWeight: Number(e.targetWeight) || 0,
-            instructions: e.instructions ? e.instructions.trim() : '',
-            order: e.order !== undefined ? Number(e.order) : index + 1,
-          }))
-      : [];
+    // Format exercise array safely
+    const formattedExercises = formatPlanExercises(exercises);
 
     const planStatus = status || 'active';
 
-    // If new plan is active, optionally archive other active plans for this member
+    // If new plan is active, archive other active plans for this member
     if (planStatus === 'active') {
       await TrainingPlan.updateMany(
         { member: memberId, status: 'active' },
@@ -321,6 +380,7 @@ const updateTrainingPlan = async (req, res, next) => {
     }
 
     const {
+      trainerId,
       planName,
       description,
       goal,
@@ -331,6 +391,25 @@ const updateTrainingPlan = async (req, res, next) => {
       notes,
     } = req.body;
 
+    if (req.user.role === 'admin' && trainerId !== undefined) {
+      if (!mongoose.Types.ObjectId.isValid(trainerId)) {
+        return errorResponse(res, 'Selected trainer does not exist.', null, 400);
+      }
+      const trainerDoc = await Trainer.findById(trainerId);
+      if (!trainerDoc) {
+        return errorResponse(res, 'Selected trainer does not exist.', null, 404);
+      }
+      if (trainerDoc.status !== 'active') {
+        return errorResponse(
+          res,
+          'Selected trainer is inactive. Please choose an active trainer.',
+          null,
+          400
+        );
+      }
+      plan.trainer = trainerDoc._id;
+    }
+
     if (planName !== undefined) plan.planName = planName.trim();
     if (description !== undefined) plan.description = description.trim();
     if (goal !== undefined) plan.goal = goal;
@@ -339,19 +418,8 @@ const updateTrainingPlan = async (req, res, next) => {
     if (endDate !== undefined) plan.endDate = endDate;
     if (notes !== undefined) plan.notes = notes.trim();
 
-    if (exercises !== undefined && Array.isArray(exercises)) {
-      plan.exercises = exercises
-        .filter((e) => e && (e.exercise || e._id))
-        .map((e, index) => ({
-          exercise: e.exercise || e._id,
-          sets: Number(e.sets) || 3,
-          reps: Number(e.reps) || 10,
-          duration: Number(e.duration) || 0,
-          restTime: Number(e.restTime) !== undefined ? Number(e.restTime) : 60,
-          targetWeight: Number(e.targetWeight) || 0,
-          instructions: e.instructions ? e.instructions.trim() : '',
-          order: e.order !== undefined ? Number(e.order) : index + 1,
-        }));
+    if (exercises !== undefined) {
+      plan.exercises = formatPlanExercises(exercises);
     }
 
     await plan.save();

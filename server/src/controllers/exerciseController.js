@@ -1,4 +1,5 @@
 const Exercise = require('../models/Exercise');
+const TrainingPlan = require('../models/TrainingPlan');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -118,10 +119,10 @@ const createExercise = async (req, res, next) => {
         : [],
       equipment: equipment || 'None',
       difficulty: difficulty || 'Beginner',
-      defaultSets: defaultSets || 3,
-      defaultReps: defaultReps || 10,
-      defaultDuration: defaultDuration || 0,
-      defaultRestTime: defaultRestTime !== undefined ? defaultRestTime : 60,
+      defaultSets: defaultSets !== undefined && defaultSets !== null && defaultSets !== '' && !isNaN(Number(defaultSets)) ? Number(defaultSets) : 3,
+      defaultReps: defaultReps !== undefined && defaultReps !== null && defaultReps !== '' && !isNaN(Number(defaultReps)) ? Number(defaultReps) : 10,
+      defaultDuration: defaultDuration !== undefined && defaultDuration !== null && defaultDuration !== '' && !isNaN(Number(defaultDuration)) ? Number(defaultDuration) : 0,
+      defaultRestTime: defaultRestTime !== undefined && defaultRestTime !== null && defaultRestTime !== '' && !isNaN(Number(defaultRestTime)) ? Number(defaultRestTime) : 60,
       status: status || 'active',
     });
 
@@ -178,10 +179,18 @@ const updateExercise = async (req, res, next) => {
     }
     if (equipment) exercise.equipment = equipment;
     if (difficulty) exercise.difficulty = difficulty;
-    if (defaultSets !== undefined) exercise.defaultSets = defaultSets;
-    if (defaultReps !== undefined) exercise.defaultReps = defaultReps;
-    if (defaultDuration !== undefined) exercise.defaultDuration = defaultDuration;
-    if (defaultRestTime !== undefined) exercise.defaultRestTime = defaultRestTime;
+    if (defaultSets !== undefined && defaultSets !== null && defaultSets !== '' && !isNaN(Number(defaultSets))) {
+      exercise.defaultSets = Number(defaultSets);
+    }
+    if (defaultReps !== undefined && defaultReps !== null && defaultReps !== '' && !isNaN(Number(defaultReps))) {
+      exercise.defaultReps = Number(defaultReps);
+    }
+    if (defaultDuration !== undefined && defaultDuration !== null && defaultDuration !== '' && !isNaN(Number(defaultDuration))) {
+      exercise.defaultDuration = Number(defaultDuration);
+    }
+    if (defaultRestTime !== undefined && defaultRestTime !== null && defaultRestTime !== '' && !isNaN(Number(defaultRestTime))) {
+      exercise.defaultRestTime = Number(defaultRestTime);
+    }
     if (status) exercise.status = status;
 
     await exercise.save();
@@ -202,6 +211,20 @@ const deleteExercise = async (req, res, next) => {
     const exercise = await Exercise.findById(req.params.id);
     if (!exercise) {
       return errorResponse(res, 'Exercise not found.', null, 404);
+    }
+
+    // Check if the exercise is currently referenced in any training plan
+    const isReferenced = await TrainingPlan.exists({
+      'exercises.exercise': exercise._id,
+    });
+
+    if (isReferenced) {
+      return errorResponse(
+        res,
+        'This exercise is currently used by one or more training plans and cannot be deleted. Deactivate it instead.',
+        null,
+        409
+      );
     }
 
     await Exercise.findByIdAndDelete(exercise._id);
