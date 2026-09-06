@@ -960,6 +960,166 @@ export const paymentsApi = {
   },
 };
 
+/**
+ * Phase 9: Fitness Progress API Service
+ */
+export const progressApi = {
+  create: async (progressData) => {
+    const response = await fetch(`${API_BASE_URL}/progress`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(progressData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to create progress record');
+    return data.data?.progress;
+  },
+
+  getMyProgress: async () => {
+    const response = await fetch(`${API_BASE_URL}/progress/me`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch personal progress');
+    return data.data;
+  },
+
+  getMemberProgress: async (memberId) => {
+    const response = await fetch(`${API_BASE_URL}/progress/member/${memberId}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch member progress');
+    return data.data;
+  },
+
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    if (params.memberId) query.append('memberId', params.memberId);
+    if (params.search) query.append('search', params.search);
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/progress${queryString}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch progress logs');
+    return data.data;
+  },
+
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/progress/${id}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch progress record');
+    return data.data?.progress;
+  },
+
+  update: async (id, progressData) => {
+    const response = await fetch(`${API_BASE_URL}/progress/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(progressData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update progress record');
+    return data.data?.progress;
+  },
+
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/progress/${id}`, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete progress record');
+    return data;
+  },
+};
+
+/**
+ * Phase 10: In-App Notifications API Service
+ */
+export const notificationsApi = {
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    if (params.isRead !== undefined) query.append('isRead', params.isRead);
+
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/notifications${queryString}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch notifications');
+    return data.data;
+  },
+
+  getUnreadCount: async () => {
+    const response = await fetch(`${API_BASE_URL}/notifications/unread-count`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch unread notification count');
+    return data.data?.count || 0;
+  },
+
+  markAsRead: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/notifications/${id}/read`, {
+      method: 'PATCH',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to mark notification as read');
+    return data.data?.notification;
+  },
+
+  markAllAsRead: async () => {
+    const response = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+      method: 'PATCH',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to mark all notifications as read');
+    return data.data;
+  },
+
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/notifications/${id}`, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete notification');
+    return data;
+  },
+};
+
+
 
 
 

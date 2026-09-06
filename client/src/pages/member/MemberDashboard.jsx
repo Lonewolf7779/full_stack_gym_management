@@ -29,6 +29,12 @@ import {
   Check,
   Zap,
   DollarSign,
+  TrendingDown,
+  Plus,
+  Trash2,
+  LineChart,
+  Scale,
+  RefreshCw,
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
@@ -41,6 +47,7 @@ import {
   attendanceApi,
   membershipPlansApi,
   paymentsApi,
+  progressApi,
 } from '../../services/api';
 import './MemberDashboard.css';
 import '../admin/AdminDashboard.css';
@@ -87,6 +94,41 @@ export default function MemberDashboard() {
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
 
+  // Fitness Progress & Body Composition States
+  const [progressRecords, setProgressRecords] = useState([]);
+  const [progressStats, setProgressStats] = useState({
+    totalRecords: 0,
+    currentWeight: null,
+    startingWeight: null,
+    weightChange: null,
+    currentBodyFat: null,
+    startingBodyFat: null,
+    bodyFatChange: null,
+    latestChest: null,
+    latestWaist: null,
+    latestHips: null,
+    latestArms: null,
+    latestThighs: null,
+    lastRecordedDate: null,
+  });
+  const [trendPoints, setTrendPoints] = useState([]);
+  const [loadingProgress, setLoadingProgress] = useState(false);
+  const [progressModalOpen, setProgressModalOpen] = useState(false);
+  const [editingProgressId, setEditingProgressId] = useState(null);
+  const [progressForm, setProgressForm] = useState({
+    weight: '',
+    bodyFatPercentage: '',
+    chest: '',
+    waist: '',
+    hips: '',
+    arms: '',
+    thighs: '',
+    notes: '',
+    recordedAt: '',
+  });
+  const [progressError, setProgressError] = useState('');
+  const [savingProgress, setSavingProgress] = useState(false);
+
   // Edit Profile Modal
   const [editProfileModalOpen, setEditProfileModalOpen] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -101,6 +143,22 @@ export default function MemberDashboard() {
   });
 
   const [submitting, setSubmitting] = useState(false);
+
+  const loadProgressHistory = useCallback(async () => {
+    try {
+      setLoadingProgress(true);
+      const res = await progressApi.getMyProgress();
+      if (res) {
+        setProgressRecords(res.records || []);
+        if (res.stats) setProgressStats(res.stats);
+        if (res.trendPoints) setTrendPoints(res.trendPoints);
+      }
+    } catch (err) {
+      console.warn('[Progress] Error fetching progress history:', err.message);
+    } finally {
+      setLoadingProgress(false);
+    }
+  }, []);
 
   const loadMemberData = useCallback(async () => {
     try {
@@ -191,7 +249,90 @@ export default function MemberDashboard() {
     loadAttendanceHistory();
     loadPaymentHistory();
     loadAvailablePlans();
-  }, [loadMemberData, loadTodayStatus, loadAttendanceHistory, loadPaymentHistory, loadAvailablePlans]);
+    loadProgressHistory();
+  }, [loadMemberData, loadTodayStatus, loadAttendanceHistory, loadPaymentHistory, loadAvailablePlans, loadProgressHistory]);
+
+  const handleOpenAddProgress = () => {
+    setEditingProgressId(null);
+    setProgressError('');
+    setProgressForm({
+      weight: '',
+      bodyFatPercentage: '',
+      chest: '',
+      waist: '',
+      hips: '',
+      arms: '',
+      thighs: '',
+      notes: '',
+      recordedAt: new Date().toISOString().split('T')[0],
+    });
+    setProgressModalOpen(true);
+  };
+
+  const handleOpenEditProgress = (record) => {
+    setEditingProgressId(record._id);
+    setProgressError('');
+    setProgressForm({
+      weight: record.weight !== null && record.weight !== undefined ? record.weight : '',
+      bodyFatPercentage: record.bodyFatPercentage !== null && record.bodyFatPercentage !== undefined ? record.bodyFatPercentage : '',
+      chest: record.chest !== null && record.chest !== undefined ? record.chest : '',
+      waist: record.waist !== null && record.waist !== undefined ? record.waist : '',
+      hips: record.hips !== null && record.hips !== undefined ? record.hips : '',
+      arms: record.arms !== null && record.arms !== undefined ? record.arms : '',
+      thighs: record.thighs !== null && record.thighs !== undefined ? record.thighs : '',
+      notes: record.notes || '',
+      recordedAt: record.recordedAt ? record.recordedAt.split('T')[0] : '',
+    });
+    setProgressModalOpen(true);
+  };
+
+  const handleSaveProgress = async (e) => {
+    e.preventDefault();
+    setProgressError('');
+    setSavingProgress(true);
+
+    try {
+      const payload = {
+        weight: progressForm.weight !== '' ? Number(progressForm.weight) : undefined,
+        bodyFatPercentage: progressForm.bodyFatPercentage !== '' ? Number(progressForm.bodyFatPercentage) : undefined,
+        chest: progressForm.chest !== '' ? Number(progressForm.chest) : undefined,
+        waist: progressForm.waist !== '' ? Number(progressForm.waist) : undefined,
+        hips: progressForm.hips !== '' ? Number(progressForm.hips) : undefined,
+        arms: progressForm.arms !== '' ? Number(progressForm.arms) : undefined,
+        thighs: progressForm.thighs !== '' ? Number(progressForm.thighs) : undefined,
+        notes: progressForm.notes,
+        recordedAt: progressForm.recordedAt || undefined,
+      };
+
+      if (editingProgressId) {
+        await progressApi.update(editingProgressId, payload);
+        setSuccessMessage('Fitness progress record updated successfully.');
+      } else {
+        await progressApi.create(payload);
+        setSuccessMessage('New fitness progress recorded successfully.');
+      }
+
+      setProgressModalOpen(false);
+      loadProgressHistory();
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+      setProgressError(err.message || 'Failed to save fitness progress.');
+    } finally {
+      setSavingProgress(false);
+    }
+  };
+
+  const handleDeleteProgress = async (id) => {
+    try {
+      await progressApi.delete(id);
+      setSuccessMessage('Fitness record deleted.');
+      loadProgressHistory();
+      setTimeout(() => setSuccessMessage(''), 4000);
+    } catch (err) {
+      setError(err.message || 'Failed to delete record.');
+      setTimeout(() => setError(''), 4000);
+    }
+  };
 
   // Load Razorpay Checkout Script
   const loadRazorpayScript = () => {
@@ -373,6 +514,89 @@ export default function MemberDashboard() {
   // Calculate training plan summary metrics
   const totalExercises = activePlan?.exercises?.length || 0;
   const totalSets = activePlan?.exercises?.reduce((acc, curr) => acc + (curr.sets || 0), 0) || 0;
+
+  const renderWeightTrendChart = () => {
+    const validPoints = (trendPoints || []).filter(
+      (p) => p.weight !== null && p.weight !== undefined && Number.isFinite(p.weight)
+    );
+
+    if (validPoints.length < 2) {
+      return (
+        <div className="trend-empty-placeholder">
+          <LineChart size={28} className="text-muted" />
+          <p>Log at least 2 weight entries to render your interactive trend line chart.</p>
+        </div>
+      );
+    }
+
+    const weights = validPoints.map((p) => p.weight);
+    const minW = Math.floor(Math.min(...weights) - 2);
+    const maxW = Math.ceil(Math.max(...weights) + 2);
+    const range = maxW - minW || 1;
+
+    const width = 640;
+    const height = 180;
+    const padLeft = 45;
+    const padRight = 30;
+    const padTop = 25;
+    const padBottom = 35;
+    const plotW = width - padLeft - padRight;
+    const plotH = height - padTop - padBottom;
+
+    const points = validPoints.map((p, i) => {
+      const x = padLeft + i * (plotW / (validPoints.length - 1));
+      const y = padTop + plotH - ((p.weight - minW) / range) * plotH;
+      return { ...p, x, y };
+    });
+
+    const polylineStr = points.map((p) => `${p.x},${p.y}`).join(' ');
+    const areaPathStr =
+      `M ${points[0].x} ${padTop + plotH} ` +
+      points.map((p) => `L ${p.x} ${p.y}`).join(' ') +
+      ` L ${points[points.length - 1].x} ${padTop + plotH} Z`;
+
+    return (
+      <div className="progress-trend-svg-container">
+        <svg viewBox={`0 0 ${width} ${height}`} className="progress-trend-svg" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="weightAreaGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor="#ff6a26" stopOpacity="0.35" />
+              <stop offset="100%" stopColor="#ff6a26" stopOpacity="0.0" />
+            </linearGradient>
+          </defs>
+
+          {/* Gridlines */}
+          <line x1={padLeft} y1={padTop} x2={width - padRight} y2={padTop} stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
+          <line x1={padLeft} y1={padTop + plotH / 2} x2={width - padRight} y2={padTop + plotH / 2} stroke="rgba(255,255,255,0.06)" strokeDasharray="4 4" />
+          <line x1={padLeft} y1={padTop + plotH} x2={width - padRight} y2={padTop + plotH} stroke="rgba(255,255,255,0.12)" />
+
+          {/* Y Axis Labels */}
+          <text x={padLeft - 8} y={padTop + 4} textAnchor="end" fill="var(--text-muted)" fontSize="11">{maxW}kg</text>
+          <text x={padLeft - 8} y={padTop + plotH / 2 + 4} textAnchor="end" fill="var(--text-muted)" fontSize="11">{((maxW + minW) / 2).toFixed(1)}kg</text>
+          <text x={padLeft - 8} y={padTop + plotH + 4} textAnchor="end" fill="var(--text-muted)" fontSize="11">{minW}kg</text>
+
+          {/* Area fill */}
+          <path d={areaPathStr} fill="url(#weightAreaGrad)" />
+
+          {/* Trend Polyline */}
+          <polyline fill="none" stroke="#ff6a26" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" points={polylineStr} />
+
+          {/* Data points */}
+          {points.map((pt, idx) => (
+            <g key={idx} className="chart-node-group">
+              <circle cx={pt.x} cy={pt.y} r="5" fill="#ff6a26" stroke="#0b0f19" strokeWidth="2" />
+              <text x={pt.x} y={pt.y - 10} textAnchor="middle" fill="#ffffff" fontSize="11" fontWeight="700">
+                {pt.weight}kg
+              </text>
+              <text x={pt.x} y={padTop + plotH + 20} textAnchor="middle" fill="var(--text-muted)" fontSize="10">
+                {new Date(pt.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+              </text>
+            </g>
+          ))}
+        </svg>
+      </div>
+    );
+  };
 
   return (
     <div className="dashboard-page">
@@ -1327,6 +1551,206 @@ export default function MemberDashboard() {
           </Card>
         </div>
 
+        {/* SECTION: FITNESS PROGRESS & BODY COMPOSITION TRACKING */}
+        <div className="member-progress-section" style={{ marginBottom: 'var(--space-2xl)' }}>
+          <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Activity size={26} className="text-highlight" /> Fitness Progress & Body Composition
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+                Track your weight evolution, body composition reduction, and circumference milestones.
+              </p>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <Button
+                variant="outline"
+                size="sm"
+                icon={RefreshCw}
+                onClick={loadProgressHistory}
+                disabled={loadingProgress}
+              >
+                Refresh
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Plus}
+                onClick={handleOpenAddProgress}
+              >
+                Log Metrics
+              </Button>
+            </div>
+          </div>
+
+          {/* 4 Summary Stats Metric Cards */}
+          <div className="progress-stats-grid">
+            <div className="progress-stat-box">
+              <span className="progress-stat-label">Current Weight</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                <span className="progress-stat-value" style={{ color: '#ffffff' }}>
+                  {progressStats.currentWeight !== null ? `${progressStats.currentWeight} kg` : '—'}
+                </span>
+                {progressStats.weightChange !== null && (
+                  <span
+                    className={`stat-delta-badge ${progressStats.weightChange <= 0 ? 'loss' : 'gain'}`}
+                    title="Weight change since first logged record"
+                  >
+                    {progressStats.weightChange <= 0 ? <TrendingDown size={12} /> : <TrendingUp size={12} />}
+                    {progressStats.weightChange > 0 ? `+${progressStats.weightChange}` : progressStats.weightChange} kg
+                  </span>
+                )}
+              </div>
+              <span className="progress-stat-sub">
+                {progressStats.startingWeight !== null ? `Baseline: ${progressStats.startingWeight} kg` : 'No weight recorded yet'}
+              </span>
+            </div>
+
+            <div className="progress-stat-box">
+              <span className="progress-stat-label">Body Fat Percentage</span>
+              <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                <span className="progress-stat-value" style={{ color: '#00e5ff' }}>
+                  {progressStats.currentBodyFat !== null ? `${progressStats.currentBodyFat}%` : '—'}
+                </span>
+                {progressStats.bodyFatChange !== null && (
+                  <span
+                    className={`stat-delta-badge ${progressStats.bodyFatChange <= 0 ? 'loss' : 'gain'}`}
+                    title="Body fat change since baseline"
+                  >
+                    {progressStats.bodyFatChange <= 0 ? <TrendingDown size={12} /> : <TrendingUp size={12} />}
+                    {progressStats.bodyFatChange > 0 ? `+${progressStats.bodyFatChange}` : progressStats.bodyFatChange}%
+                  </span>
+                )}
+              </div>
+              <span className="progress-stat-sub">
+                {progressStats.startingBodyFat !== null ? `Baseline: ${progressStats.startingBodyFat}%` : 'No body fat recorded'}
+              </span>
+            </div>
+
+            <div className="progress-stat-box">
+              <span className="progress-stat-label">Total Progress Entries</span>
+              <span className="progress-stat-value" style={{ color: 'var(--primary)' }}>
+                {progressStats.totalRecords} Logs
+              </span>
+              <span className="progress-stat-sub">
+                {progressStats.lastRecordedDate
+                  ? `Last: ${new Date(progressStats.lastRecordedDate).toLocaleDateString()}`
+                  : 'Start tracking today'}
+              </span>
+            </div>
+
+            <div className="progress-stat-box">
+              <span className="progress-stat-label">Latest Circumferences</span>
+              <div className="latest-circumferences-pills">
+                <span>Chest: <strong>{progressStats.latestChest ? `${progressStats.latestChest}cm` : '—'}</strong></span>
+                <span>Waist: <strong>{progressStats.latestWaist ? `${progressStats.latestWaist}cm` : '—'}</strong></span>
+                <span>Arms: <strong>{progressStats.latestArms ? `${progressStats.latestArms}cm` : '—'}</strong></span>
+                <span>Thighs: <strong>{progressStats.latestThighs ? `${progressStats.latestThighs}cm` : '—'}</strong></span>
+              </div>
+            </div>
+          </div>
+
+          {/* SVG Trend Chart Card */}
+          <Card className="glass-panel" padding="normal" style={{ marginBottom: '1.25rem' }}>
+            <div className="card-title-header" style={{ marginBottom: '0.75rem' }}>
+              <h3 style={{ fontSize: '1.1rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                <LineChart size={18} className="text-highlight" /> Weight Evolution Trendline
+              </h3>
+            </div>
+            {renderWeightTrendChart()}
+          </Card>
+
+          {/* Progress Logs Table */}
+          <Card className="glass-panel" padding="none">
+            {progressRecords && progressRecords.length > 0 ? (
+              <div className="table-responsive">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Weight</th>
+                      <th>Body Fat</th>
+                      <th>Measurements (Chest / Waist / Hips / Arms / Thighs)</th>
+                      <th>Notes</th>
+                      <th>Recorded By</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {progressRecords.map((rec) => (
+                      <tr key={rec._id}>
+                        <td style={{ fontWeight: 600, color: '#ffffff' }}>
+                          {rec.recordedAt ? new Date(rec.recordedAt).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td style={{ fontWeight: 800, color: '#ffffff' }}>
+                          {rec.weight !== null && rec.weight !== undefined ? `${rec.weight} kg` : '—'}
+                        </td>
+                        <td style={{ color: '#00e5ff', fontWeight: 700 }}>
+                          {rec.bodyFatPercentage !== null && rec.bodyFatPercentage !== undefined ? `${rec.bodyFatPercentage}%` : '—'}
+                        </td>
+                        <td>
+                          <span className="measurement-chips">
+                            {rec.chest && <span>C: {rec.chest}cm</span>}
+                            {rec.waist && <span>W: {rec.waist}cm</span>}
+                            {rec.hips && <span>H: {rec.hips}cm</span>}
+                            {rec.arms && <span>A: {rec.arms}cm</span>}
+                            {rec.thighs && <span>T: {rec.thighs}cm</span>}
+                            {!rec.chest && !rec.waist && !rec.hips && !rec.arms && !rec.thighs && <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                          </span>
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '200px' }}>
+                          {rec.notes || '—'}
+                        </td>
+                        <td>
+                          <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                            {rec.recordedBy?.name || 'Self'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: '0.35rem' }}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              icon={Edit2}
+                              onClick={() => handleOpenEditProgress(rec)}
+                              title="Edit record"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              icon={Trash2}
+                              onClick={() => handleDeleteProgress(rec._id)}
+                              title="Delete record"
+                            />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state-box" style={{ padding: '2.5rem 1rem' }}>
+                <div className="empty-state-icon">
+                  <Scale size={28} />
+                </div>
+                <span className="empty-state-title">No Fitness Progress Records Yet</span>
+                <p style={{ fontSize: '0.88rem', marginBottom: '1rem' }}>
+                  Log your body weight and circumference metrics to visualize your transformation journey.
+                </p>
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={Plus}
+                  onClick={handleOpenAddProgress}
+                >
+                  Log First Measurement
+                </Button>
+              </div>
+            )}
+          </Card>
+        </div>
+
         {/* SECTION: MY BILLING & PAYMENT INVOICES */}
         <div className="member-billing-section">
           <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
@@ -1817,6 +2241,190 @@ export default function MemberDashboard() {
               </div>
             </div>
           )}
+        </Modal>
+
+        {/* LOG / EDIT FITNESS PROGRESS MODAL */}
+        <Modal
+          isOpen={progressModalOpen}
+          onClose={() => setProgressModalOpen(false)}
+          title={editingProgressId ? 'Edit Fitness Measurements' : 'Log Fitness Progress'}
+          subtitle="Record body weight, body fat %, and circumference metrics."
+          size="md"
+        >
+          <form onSubmit={handleSaveProgress}>
+            {progressError && (
+              <div
+                className="auth-error-alert"
+                style={{ marginBottom: '1rem' }}
+              >
+                <AlertCircle size={16} className="error-icon" />
+                <span>{progressError}</span>
+              </div>
+            )}
+
+            <div className="modal-form-grid">
+              <div className="form-field">
+                <label className="field-label">Weight (kg)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="20"
+                  max="500"
+                  className="field-input"
+                  placeholder="e.g. 78.5"
+                  value={progressForm.weight}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, weight: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Body Fat (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="75"
+                  className="field-input"
+                  placeholder="e.g. 18.2"
+                  value={progressForm.bodyFatPercentage}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, bodyFatPercentage: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Chest Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="20"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 102"
+                  value={progressForm.chest}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, chest: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Waist Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="20"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 84"
+                  value={progressForm.waist}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, waist: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Hips Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="20"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 96"
+                  value={progressForm.hips}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, hips: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Arms / Biceps (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="10"
+                  max="100"
+                  className="field-input"
+                  placeholder="e.g. 36.5"
+                  value={progressForm.arms}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, arms: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Thighs Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="15"
+                  max="150"
+                  className="field-input"
+                  placeholder="e.g. 58"
+                  value={progressForm.thighs}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, thighs: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Recorded Date</label>
+                <input
+                  type="date"
+                  className="field-input"
+                  value={progressForm.recordedAt}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, recordedAt: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Notes & Observations</label>
+                <textarea
+                  className="field-textarea"
+                  rows={3}
+                  placeholder="e.g. Completed 4-week cut, energy levels high, PRs maintained."
+                  value={progressForm.notes}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, notes: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={() => setProgressModalOpen(false)}
+                disabled={savingProgress}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                disabled={savingProgress}
+              >
+                {savingProgress
+                  ? 'Saving Metrics...'
+                  : editingProgressId
+                  ? 'Update Record'
+                  : 'Save Progress Record'}
+              </Button>
+            </div>
+          </form>
         </Modal>
       </div>
     </div>

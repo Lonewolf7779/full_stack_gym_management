@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const TrainerExerciseAssignment = require('../models/TrainerExerciseAssignment');
 const Trainer = require('../models/Trainer');
 const Exercise = require('../models/Exercise');
+const { createNotification } = require('../utils/notificationHelper');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -88,6 +89,19 @@ const createTrainerExerciseAssignment = async (req, res, next) => {
       })
       .populate('exercise')
       .populate('assignedBy', 'name email');
+
+    // Notify trainer
+    if (trainer?.user?._id) {
+      await createNotification({
+        recipient: trainer.user._id,
+        type: 'exercise_assigned',
+        title: 'New Exercise Assigned to Teaching Profile',
+        message: `Exercise "${exercise.name}" has been added to your coaching catalog.`,
+        relatedEntityType: 'Trainer',
+        relatedEntityId: trainer._id,
+        idempotencyKey: `tea_${assignment._id}`,
+      });
+    }
 
     return successResponse(
       res,

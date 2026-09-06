@@ -3,6 +3,7 @@ const MemberExerciseAssignment = require('../models/MemberExerciseAssignment');
 const Member = require('../models/Member');
 const Trainer = require('../models/Trainer');
 const Exercise = require('../models/Exercise');
+const { createNotification } = require('../utils/notificationHelper');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -148,6 +149,19 @@ const createMemberExerciseAssignment = async (req, res, next) => {
         populate: { path: 'user', select: 'name email' },
       })
       .populate('exercise');
+
+    // Notify member of exercise assignment
+    if (memberDoc?.user?._id) {
+      await createNotification({
+        recipient: memberDoc.user._id,
+        type: 'exercise_assigned',
+        title: 'New Exercise Assigned',
+        message: `Coach ${trainerDoc.user?.name || 'Trainer'} assigned "${exerciseDoc.name}" to your routine.`,
+        relatedEntityType: 'MemberExerciseAssignment',
+        relatedEntityId: assignment._id,
+        idempotencyKey: `mea_${assignment._id}`,
+      });
+    }
 
     return successResponse(
       res,

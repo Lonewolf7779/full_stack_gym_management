@@ -6,6 +6,7 @@ const WebhookEvent = require('../models/WebhookEvent');
 const Member = require('../models/Member');
 const MembershipPlan = require('../models/MembershipPlan');
 const User = require('../models/User');
+const { createNotification } = require('../utils/notificationHelper');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -86,7 +87,8 @@ const fulfillMembership = async (payment) => {
       let newEndDate = new Date();
 
       // Check if current membership is still active (renewal extension)
-      if (member.membershipEndDate && new Date(member.membershipEndDate) > now) {
+      const isRenewal = member.membershipEndDate && new Date(member.membershipEndDate) > now;
+      if (isRenewal) {
         newStartDate = member.membershipStartDate || now;
         newEndDate = new Date(member.membershipEndDate);
       }
@@ -101,6 +103,25 @@ const fulfillMembership = async (payment) => {
       member.status = 'active';
 
       await member.save();
+
+      // Dispatch real-time in-app notification to member
+      if (member.user) {
+        const notifType = isRenewal ? 'membership_renewed' : 'payment_success';
+        const notifTitle = isRenewal ? 'Membership Renewed' : 'Payment Received';
+        const notifMsg = isRenewal
+          ? `Your ${plan.name} membership has been renewed until ${newEndDate.toLocaleDateString()}.`
+          : `Payment of $${payment.amount} for ${plan.name} was successful. Membership is active!`;
+
+        await createNotification({
+          recipient: member.user._id || member.user,
+          type: notifType,
+          title: notifTitle,
+          message: notifMsg,
+          relatedEntityType: 'Payment',
+          relatedEntityId: payment._id,
+          idempotencyKey: `pay_ful_${payment._id}`,
+        });
+      }
     }
   }
 

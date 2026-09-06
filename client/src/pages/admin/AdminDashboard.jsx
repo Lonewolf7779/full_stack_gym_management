@@ -34,6 +34,8 @@ import {
   Wallet,
   Zap,
   Check,
+  Scale,
+  RefreshCw,
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
@@ -50,6 +52,7 @@ import {
   usersApi,
   attendanceApi,
   paymentsApi,
+  progressApi,
 } from '../../services/api';
 import './AdminDashboard.css';
 
@@ -57,7 +60,7 @@ export default function AdminDashboard() {
   const { user } = useAuth();
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'members' | 'trainers' | 'exercises' | 'plans' | 'memberships' | 'attendance' | 'payments'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'members' | 'trainers' | 'exercises' | 'plans' | 'memberships' | 'attendance' | 'payments' | 'progress'
 
   // Data States
   const [statsData, setStatsData] = useState(null);
@@ -154,6 +157,37 @@ export default function AdminDashboard() {
   const [deleteAttendanceTarget, setDeleteAttendanceTarget] = useState(null);
   const [deleteAttendanceError, setDeleteAttendanceError] = useState('');
   const [attendanceSubmitting, setAttendanceSubmitting] = useState(false);
+
+  // Phase 9: Fitness Progress States
+  const [progressLogs, setProgressLogs] = useState([]);
+  const [progressTotal, setProgressTotal] = useState(0);
+  const [progressPage, setProgressPage] = useState(1);
+  const [progressPages, setProgressPages] = useState(1);
+  const [progressSearch, setProgressSearch] = useState('');
+  const [progressMemberFilter, setProgressMemberFilter] = useState('');
+  const [progressStartDate, setProgressStartDate] = useState('');
+  const [progressEndDate, setProgressEndDate] = useState('');
+  const [progressLoading, setProgressLoading] = useState(false);
+  const [adminProgressModalOpen, setAdminProgressModalOpen] = useState(false);
+  const [adminEditingProgress, setAdminEditingProgress] = useState(null);
+  const [adminProgressForm, setAdminProgressForm] = useState({
+    memberId: '',
+    weight: '',
+    bodyFatPercentage: '',
+    chest: '',
+    waist: '',
+    hips: '',
+    arms: '',
+    thighs: '',
+    notes: '',
+    recordedAt: '',
+  });
+  const [adminProgressError, setAdminProgressError] = useState('');
+  const [adminProgressSubmitting, setAdminProgressSubmitting] = useState(false);
+  const [deleteProgressModalOpen, setDeleteProgressModalOpen] = useState(false);
+  const [deleteProgressTarget, setDeleteProgressTarget] = useState(null);
+  const [deleteProgressError, setDeleteProgressError] = useState('');
+
   const [trainingPlans, setTrainingPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -366,15 +400,148 @@ export default function AdminDashboard() {
     paymentEndDateFilter,
   ]);
 
+  // Load Admin Gym-Wide Progress Logs
+  const loadAdminProgress = useCallback(async () => {
+    try {
+      setProgressLoading(true);
+      const params = {
+        page: progressPage,
+        limit: 20,
+      };
+      if (progressSearch) params.search = progressSearch;
+      if (progressMemberFilter) params.memberId = progressMemberFilter;
+      if (progressStartDate) params.startDate = progressStartDate;
+      if (progressEndDate) params.endDate = progressEndDate;
+
+      const res = await progressApi.getAll(params);
+      if (res) {
+        setProgressLogs(res.records || []);
+        setProgressTotal(res.total || 0);
+        setProgressPages(res.pages || 1);
+      }
+    } catch (err) {
+      console.warn('[Admin Progress] Error:', err.message);
+    } finally {
+      setProgressLoading(false);
+    }
+  }, [
+    progressPage,
+    progressSearch,
+    progressMemberFilter,
+    progressStartDate,
+    progressEndDate,
+  ]);
+
   useEffect(() => {
     loadDashboardData();
     loadAdminAttendance();
     loadAdminPayments();
-  }, [loadDashboardData, loadAdminAttendance, loadAdminPayments]);
+    loadAdminProgress();
+  }, [loadDashboardData, loadAdminAttendance, loadAdminPayments, loadAdminProgress]);
 
   const flashMessage = (msg) => {
     setSuccessMessage(msg);
     setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  // --- Admin Progress Handlers ---
+  const handleOpenAdminAddProgress = () => {
+    setAdminEditingProgress(null);
+    setAdminProgressError('');
+    setAdminProgressForm({
+      memberId: members[0]?._id || '',
+      weight: '',
+      bodyFatPercentage: '',
+      chest: '',
+      waist: '',
+      hips: '',
+      arms: '',
+      thighs: '',
+      notes: '',
+      recordedAt: new Date().toISOString().split('T')[0],
+    });
+    setAdminProgressModalOpen(true);
+  };
+
+  const handleOpenAdminEditProgress = (rec) => {
+    setAdminEditingProgress(rec);
+    setAdminProgressError('');
+    setAdminProgressForm({
+      memberId: rec.member?._id || rec.member,
+      weight: rec.weight !== null && rec.weight !== undefined ? rec.weight : '',
+      bodyFatPercentage: rec.bodyFatPercentage !== null && rec.bodyFatPercentage !== undefined ? rec.bodyFatPercentage : '',
+      chest: rec.chest !== null && rec.chest !== undefined ? rec.chest : '',
+      waist: rec.waist !== null && rec.waist !== undefined ? rec.waist : '',
+      hips: rec.hips !== null && rec.hips !== undefined ? rec.hips : '',
+      arms: rec.arms !== null && rec.arms !== undefined ? rec.arms : '',
+      thighs: rec.thighs !== null && rec.thighs !== undefined ? rec.thighs : '',
+      notes: rec.notes || '',
+      recordedAt: rec.recordedAt ? rec.recordedAt.split('T')[0] : '',
+    });
+    setAdminProgressModalOpen(true);
+  };
+
+  const handleAdminSaveProgress = async (e) => {
+    e.preventDefault();
+    if (!adminProgressForm.memberId) {
+      setAdminProgressError('Please select a member.');
+      return;
+    }
+
+    try {
+      setAdminProgressSubmitting(true);
+      setAdminProgressError('');
+
+      const payload = {
+        memberId: adminProgressForm.memberId,
+        weight: adminProgressForm.weight !== '' ? Number(adminProgressForm.weight) : undefined,
+        bodyFatPercentage: adminProgressForm.bodyFatPercentage !== '' ? Number(adminProgressForm.bodyFatPercentage) : undefined,
+        chest: adminProgressForm.chest !== '' ? Number(adminProgressForm.chest) : undefined,
+        waist: adminProgressForm.waist !== '' ? Number(adminProgressForm.waist) : undefined,
+        hips: adminProgressForm.hips !== '' ? Number(adminProgressForm.hips) : undefined,
+        arms: adminProgressForm.arms !== '' ? Number(adminProgressForm.arms) : undefined,
+        thighs: adminProgressForm.thighs !== '' ? Number(adminProgressForm.thighs) : undefined,
+        notes: adminProgressForm.notes,
+        recordedAt: adminProgressForm.recordedAt || undefined,
+      };
+
+      if (adminEditingProgress) {
+        await progressApi.update(adminEditingProgress._id, payload);
+        flashMessage('Fitness progress record updated successfully.');
+      } else {
+        await progressApi.create(payload);
+        flashMessage('New fitness progress entry logged.');
+      }
+
+      setAdminProgressModalOpen(false);
+      loadAdminProgress();
+    } catch (err) {
+      setAdminProgressError(err.message || 'Failed to save progress record.');
+    } finally {
+      setAdminProgressSubmitting(false);
+    }
+  };
+
+  const handleOpenDeleteProgress = (rec) => {
+    setDeleteProgressTarget(rec);
+    setDeleteProgressError('');
+    setDeleteProgressModalOpen(true);
+  };
+
+  const handleConfirmDeleteProgress = async () => {
+    if (!deleteProgressTarget) return;
+    try {
+      setAdminProgressSubmitting(true);
+      await progressApi.delete(deleteProgressTarget._id);
+      flashMessage('Progress entry deleted.');
+      setDeleteProgressModalOpen(false);
+      setDeleteProgressTarget(null);
+      loadAdminProgress();
+    } catch (err) {
+      setDeleteProgressError(err.message || 'Failed to delete record.');
+    } finally {
+      setAdminProgressSubmitting(false);
+    }
   };
 
   // --- Payment Action Handlers ---
@@ -1269,6 +1436,13 @@ export default function AdminDashboard() {
           >
             <Wallet size={16} />
             <span>Payments & Billing ({paymentStats.totalTransactions})</span>
+          </button>
+          <button
+            className={`dashboard-tab-btn ${activeTab === 'progress' ? 'active' : ''}`}
+            onClick={() => setActiveTab('progress')}
+          >
+            <Scale size={16} />
+            <span>Fitness Progress ({progressTotal})</span>
           </button>
         </div>
 
@@ -2644,6 +2818,270 @@ export default function AdminDashboard() {
                   <span className="empty-state-title">No Payment Records Found</span>
                   <p style={{ fontSize: '0.88rem' }}>
                     No transactions match your current search/filter settings. Click &ldquo;Record Manual Payment&rdquo; to log an offline transaction.
+                  </p>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* TAB 9: FITNESS PROGRESS */}
+        {activeTab === 'progress' && (
+          <div className="progress-tab-content">
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: '1.5rem',
+                flexWrap: 'wrap',
+                gap: '1rem',
+              }}
+            >
+              <div>
+                <h3 style={{ margin: 0, fontSize: '1.25rem', color: '#ffffff' }}>
+                  Gym-Wide Fitness & Body Composition Records
+                </h3>
+                <p style={{ margin: '0.25rem 0 0', fontSize: '0.88rem', color: 'var(--text-muted)' }}>
+                  Monitor weight changes, body fat percentages, and physical measurements across all gym members.
+                </p>
+              </div>
+              <Button
+                variant="primary"
+                size="md"
+                onClick={handleOpenAdminAddProgress}
+              >
+                <Plus size={16} />
+                <span>Log Progress Entry</span>
+              </Button>
+            </div>
+
+            {/* Main Progress Card */}
+            <Card className="glass-panel" padding="normal">
+              {/* Filters Bar */}
+              <div className="search-filter-group" style={{ margin: '0 0 1.5rem', flexWrap: 'wrap', gap: '0.65rem' }}>
+                <div className="search-input-wrap" style={{ flex: '1 1 240px' }}>
+                  <Search size={16} className="search-icon" />
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search by member name, email or notes..."
+                    value={progressSearch}
+                    onChange={(e) => {
+                      setProgressSearch(e.target.value);
+                      setProgressPage(1);
+                    }}
+                  />
+                </div>
+
+                <select
+                  className="filter-select"
+                  value={progressMemberFilter}
+                  onChange={(e) => {
+                    setProgressMemberFilter(e.target.value);
+                    setProgressPage(1);
+                  }}
+                >
+                  <option value="">All Athletes ({members.length})</option>
+                  {members.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.user?.name || 'Athlete'} ({m.user?.email})
+                    </option>
+                  ))}
+                </select>
+
+                <input
+                  type="date"
+                  className="filter-select"
+                  style={{ color: progressStartDate ? '#ffffff' : 'var(--text-muted)' }}
+                  value={progressStartDate}
+                  onChange={(e) => {
+                    setProgressStartDate(e.target.value);
+                    setProgressPage(1);
+                  }}
+                  title="Filter from Start Date"
+                />
+
+                <input
+                  type="date"
+                  className="filter-select"
+                  style={{ color: progressEndDate ? '#ffffff' : 'var(--text-muted)' }}
+                  value={progressEndDate}
+                  onChange={(e) => {
+                    setProgressEndDate(e.target.value);
+                    setProgressPage(1);
+                  }}
+                  title="Filter to End Date"
+                />
+
+                {(progressSearch || progressMemberFilter || progressStartDate || progressEndDate) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setProgressSearch('');
+                      setProgressMemberFilter('');
+                      setProgressStartDate('');
+                      setProgressEndDate('');
+                      setProgressPage(1);
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+
+              {/* Progress Table */}
+              {progressLoading ? (
+                <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                  Loading gym-wide fitness progress records...
+                </div>
+              ) : progressLogs && progressLogs.length > 0 ? (
+                <>
+                  <div className="table-responsive">
+                    <table className="admin-table">
+                      <thead>
+                        <tr>
+                          <th>Athlete</th>
+                          <th>Recorded Date</th>
+                          <th>Weight</th>
+                          <th>Body Fat</th>
+                          <th>Measurements (Chest / Waist / Hips)</th>
+                          <th>Arms / Thighs</th>
+                          <th>Logged By</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {progressLogs.map((log) => (
+                          <tr key={log._id}>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <strong style={{ color: '#ffffff' }}>
+                                  {log.member?.user?.name || 'Athlete'}
+                                </strong>
+                                <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                  {log.member?.user?.email}
+                                </span>
+                              </div>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                                {log.recordedAt ? new Date(log.recordedAt).toLocaleDateString() : 'N/A'}
+                              </span>
+                            </td>
+                            <td>
+                              {log.weight !== null && log.weight !== undefined ? (
+                                <strong style={{ color: 'var(--primary)', fontFamily: 'var(--font-heading)' }}>
+                                  {log.weight} kg
+                                </strong>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>—</span>
+                              )}
+                            </td>
+                            <td>
+                              {log.bodyFatPercentage !== null && log.bodyFatPercentage !== undefined ? (
+                                <span style={{ color: '#00e5ff', fontWeight: 600 }}>
+                                  {log.bodyFatPercentage}%
+                                </span>
+                              ) : (
+                                <span style={{ color: 'var(--text-muted)' }}>—</span>
+                              )}
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                {[
+                                  log.chest ? `C: ${log.chest}cm` : null,
+                                  log.waist ? `W: ${log.waist}cm` : null,
+                                  log.hips ? `H: ${log.hips}cm` : null,
+                                ].filter(Boolean).join(' • ') || '—'}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                                {[
+                                  log.arms ? `Arms: ${log.arms}cm` : null,
+                                  log.thighs ? `Thighs: ${log.thighs}cm` : null,
+                                ].filter(Boolean).join(' • ') || '—'}
+                              </span>
+                            </td>
+                            <td>
+                              <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                                {log.recordedBy?.name || 'Self'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                                <button
+                                  type="button"
+                                  className="btn-icon-action"
+                                  title="Edit Progress Entry"
+                                  onClick={() => handleOpenAdminEditProgress(log)}
+                                >
+                                  <Edit2 size={15} />
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn-icon-action danger"
+                                  title="Delete Progress Entry"
+                                  onClick={() => handleOpenDeleteProgress(log)}
+                                >
+                                  <Trash2 size={15} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination Controls */}
+                  {progressPages > 1 && (
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginTop: '1.5rem',
+                        paddingTop: '1rem',
+                        borderTop: '1px solid var(--border-subtle)',
+                        fontSize: '0.88rem',
+                        color: 'var(--text-muted)',
+                      }}
+                    >
+                      <span>
+                        Showing Page {progressPage} of {progressPages} ({progressTotal} total entries)
+                      </span>
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={progressPage <= 1}
+                          onClick={() => setProgressPage((p) => Math.max(1, p - 1))}
+                        >
+                          Previous
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={progressPage >= progressPages}
+                          onClick={() => setProgressPage((p) => Math.min(progressPages, p + 1))}
+                        >
+                          Next
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="empty-state-box">
+                  <div className="empty-state-icon">
+                    <Scale size={28} />
+                  </div>
+                  <span className="empty-state-title">No Fitness Progress Records</span>
+                  <p style={{ fontSize: '0.88rem' }}>
+                    No fitness metrics match your current search/filter settings. Click &ldquo;Log Progress Entry&rdquo; to record body composition data.
                   </p>
                 </div>
               )}
@@ -4403,6 +4841,261 @@ export default function AdminDashboard() {
               </Button>
             </div>
           </form>
+        </Modal>
+
+        {/* MODAL 15: ADMIN LOG / EDIT FITNESS PROGRESS */}
+        <Modal
+          isOpen={adminProgressModalOpen}
+          onClose={() => setAdminProgressModalOpen(false)}
+          title={adminEditingProgress ? 'Edit Fitness Progress Record' : 'Log Fitness Progress Record'}
+          subtitle={
+            adminEditingProgress
+              ? 'Update body composition measurements and metrics for this athlete.'
+              : 'Record new body composition measurements, weight, and fitness milestones.'
+          }
+          size="lg"
+        >
+          <form onSubmit={handleAdminSaveProgress}>
+            {adminProgressError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1.25rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{adminProgressError}</span>
+              </div>
+            )}
+
+            <div className="form-grid-2">
+              <div className="form-field">
+                <label className="field-label">Target Athlete *</label>
+                <select
+                  className="field-input"
+                  value={adminProgressForm.memberId}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, memberId: e.target.value }))
+                  }
+                  required
+                  disabled={!!adminEditingProgress}
+                >
+                  <option value="" disabled>Select athlete</option>
+                  {members.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.user?.name || 'Athlete'} ({m.user?.email})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Date Recorded *</label>
+                <input
+                  type="date"
+                  className="field-input"
+                  value={adminProgressForm.recordedAt}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, recordedAt: e.target.value }))
+                  }
+                  required
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Weight (kg)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="20"
+                  max="500"
+                  className="field-input"
+                  placeholder="e.g. 75.5"
+                  value={adminProgressForm.weight}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, weight: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Body Fat (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="75"
+                  className="field-input"
+                  placeholder="e.g. 15.2"
+                  value={adminProgressForm.bodyFatPercentage}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({
+                      ...prev,
+                      bodyFatPercentage: e.target.value,
+                    }))
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Chest Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="10"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 102"
+                  value={adminProgressForm.chest}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, chest: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Waist Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="10"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 82"
+                  value={adminProgressForm.waist}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, waist: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Hips Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="10"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 96"
+                  value={adminProgressForm.hips}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, hips: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Arms Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="10"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 36.5"
+                  value={adminProgressForm.arms}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, arms: e.target.value }))
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Thighs Circumference (cm)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="10"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 58"
+                  value={adminProgressForm.thighs}
+                  onChange={(e) =>
+                    setAdminProgressForm((prev) => ({ ...prev, thighs: e.target.value }))
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="form-field" style={{ marginTop: '0.5rem' }}>
+              <label className="field-label">Progress & Training Notes</label>
+              <textarea
+                rows={3}
+                className="field-input"
+                placeholder="Add observations, PR milestones, physical conditioning notes..."
+                value={adminProgressForm.notes}
+                onChange={(e) =>
+                  setAdminProgressForm((prev) => ({ ...prev, notes: e.target.value }))
+                }
+              />
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                type="button"
+                onClick={() => setAdminProgressModalOpen(false)}
+                disabled={adminProgressSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md" disabled={adminProgressSubmitting}>
+                {adminProgressSubmitting
+                  ? 'Saving...'
+                  : adminEditingProgress
+                  ? 'Update Progress'
+                  : 'Save Progress Entry'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* MODAL 16: CONFIRM DELETE FITNESS PROGRESS */}
+        <Modal
+          isOpen={deleteProgressModalOpen}
+          onClose={() => setDeleteProgressModalOpen(false)}
+          title="Delete Fitness Progress Record"
+          subtitle="Are you sure you want to permanently delete this progress record?"
+          size="sm"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {deleteProgressError && (
+              <div className="assignment-error-banner">
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{deleteProgressError}</span>
+              </div>
+            )}
+
+            <p style={{ margin: 0, color: 'var(--text-secondary)', fontSize: '0.92rem' }}>
+              This will remove the measurement recorded on{' '}
+              <strong style={{ color: '#ffffff' }}>
+                {deleteProgressTarget?.recordedAt
+                  ? new Date(deleteProgressTarget.recordedAt).toLocaleDateString()
+                  : 'N/A'}
+              </strong>{' '}
+              for{' '}
+              <strong style={{ color: '#ffffff' }}>
+                {deleteProgressTarget?.member?.user?.name || 'Athlete'}
+              </strong>
+              . This action cannot be undone.
+            </p>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setDeleteProgressModalOpen(false)}
+                disabled={adminProgressSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="md"
+                onClick={handleConfirmDeleteProgress}
+                disabled={adminProgressSubmitting}
+              >
+                {adminProgressSubmitting ? 'Deleting...' : 'Delete Record'}
+              </Button>
+            </div>
+          </div>
         </Modal>
       </div>
     </div>

@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const TrainingPlan = require('../models/TrainingPlan');
 const Member = require('../models/Member');
 const Trainer = require('../models/Trainer');
+const { createNotification } = require('../utils/notificationHelper');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -347,6 +348,19 @@ const createTrainingPlan = async (req, res, next) => {
         populate: { path: 'user', select: 'name email' },
       })
       .populate('exercises.exercise');
+
+    // Notify athlete when training plan is created
+    if (populatedPlan?.member?.user?._id) {
+      await createNotification({
+        recipient: populatedPlan.member.user._id,
+        type: 'training_assigned',
+        title: 'New Training Plan Assigned',
+        message: `A new workout program "${populatedPlan.planName}" has been assigned to your profile.`,
+        relatedEntityType: 'TrainingPlan',
+        relatedEntityId: plan._id,
+        idempotencyKey: `tp_${plan._id}`,
+      });
+    }
 
     return successResponse(
       res,

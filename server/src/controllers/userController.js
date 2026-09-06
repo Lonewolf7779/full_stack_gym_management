@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const User = require('../models/User');
 const Trainer = require('../models/Trainer');
 const Member = require('../models/Member');
+const { createNotification } = require('../utils/notificationHelper');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -33,6 +34,17 @@ const updateUserStatus = async (req, res, next) => {
 
     user.status = status;
     await user.save();
+
+    // Create notification for user
+    await createNotification({
+      recipient: user._id,
+      type: 'account_status',
+      title: 'Account Status Update',
+      message: `Your account status has been updated to ${status}.`,
+      relatedEntityType: 'User',
+      relatedEntityId: user._id,
+      idempotencyKey: `user_status_${user._id}_${Date.now()}`,
+    });
 
     const safeUser = {
       id: user._id,

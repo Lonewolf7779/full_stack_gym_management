@@ -8,6 +8,8 @@ const Exercise = require('../models/Exercise');
 const TrainingPlan = require('../models/TrainingPlan');
 const Attendance = require('../models/Attendance');
 const Payment = require('../models/Payment');
+const MemberProgress = require('../models/MemberProgress');
+const Notification = require('../models/Notification');
 const connectDB = require('../config/db');
 
 const seedDatabase = async () => {
@@ -86,12 +88,14 @@ const seedDatabase = async () => {
         email: 'admin@ironforge.test',
         password: 'Admin@123',
         role: 'admin',
+        status: 'active',
       });
       console.log('[Seed] Created Admin user: admin@ironforge.test');
     } else {
       adminUser.name = 'System Administrator';
       adminUser.password = 'Admin@123';
       adminUser.role = 'admin';
+      adminUser.status = 'active';
       await adminUser.save();
     }
 
@@ -116,8 +120,8 @@ const seedDatabase = async () => {
         phone: '+1 (555) 902-3456',
         specialization: 'HIIT & Functional Conditioning',
         experience: '7+ Years',
-        certifications: ['ACSM-CPT', 'FMS Level 2', 'CrossFit L2'],
-        bio: 'Dedicated to athletic agility drills, metabolic conditioning, and mobility recovery for functional longevity.',
+        certifications: ['ACE-CPT', 'CrossFit Level 2', 'TRX Certified'],
+        bio: 'High-intensity interval conditioning, functional athletic circuits, and cardiovascular performance.',
         status: 'active',
       },
       {
@@ -125,10 +129,10 @@ const seedDatabase = async () => {
         email: 'darius@ironforge.test',
         password: 'Trainer@123',
         phone: '+1 (555) 903-4567',
-        specialization: 'Body Recomposition & Calisthenics',
-        experience: '8+ Years',
-        certifications: ['ISSA Master Coach', 'Precision Nutrition L1'],
-        bio: 'Focuses on sustainable body recomposition, macro-nutrient balancing, and raw gymnastics strength.',
+        specialization: 'Powerlifting & Biomechanics',
+        experience: '12+ Years',
+        certifications: ['USAPL Senior Coach', 'CSCS', 'FMS Level 2'],
+        bio: 'Competitive powerlifting specialist focusing on bar path optimization, deadlift lockout mechanics, and injury prehab.',
         status: 'active',
       },
     ];
@@ -142,11 +146,13 @@ const seedDatabase = async () => {
           email: t.email,
           password: t.password,
           role: 'trainer',
+          status: 'active',
         });
       } else {
         user.name = t.name;
         user.password = t.password;
         user.role = 'trainer';
+        user.status = 'active';
         await user.save();
       }
 
@@ -285,11 +291,13 @@ const seedDatabase = async () => {
           email: m.email,
           password: m.password,
           role: 'member',
+          status: m.status === 'inactive' ? 'inactive' : 'active',
         });
       } else {
         user.name = m.name;
         user.password = m.password;
         user.role = 'member';
+        user.status = m.status === 'inactive' ? 'inactive' : 'active';
         await user.save();
       }
 
@@ -1243,8 +1251,181 @@ const seedDatabase = async () => {
       }
     }
 
+    // 8. Seed Member Progress Records
+    console.log('[Seed] Seeding Member Progress Records...');
+    const rahulMember = memberMap['Rahul Patel'];
+    const sarahMember = memberMap['Sarah Jenkins'];
+    const marcusTrainer = await Trainer.findOne({ 'specialization': { $exists: true } });
+
+    if (rahulMember) {
+      await MemberProgress.deleteMany({ member: rahulMember._id });
+      const now = new Date();
+      const progressEntries = [
+        {
+          member: rahulMember._id,
+          recordedAt: new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000), // 90 days ago
+          weight: 85.0,
+          bodyFatPercentage: 22.0,
+          chest: 104,
+          waist: 92,
+          hips: 102,
+          arms: 35,
+          thighs: 60,
+          notes: 'Initial intake baseline assessment.',
+          recordedBy: adminUser._id,
+        },
+        {
+          member: rahulMember._id,
+          recordedAt: new Date(now.getTime() - 60 * 24 * 60 * 60 * 1000), // 60 days ago
+          weight: 83.2,
+          bodyFatPercentage: 20.5,
+          chest: 105,
+          waist: 89,
+          hips: 100,
+          arms: 36,
+          thighs: 59,
+          notes: 'Solid progress on nutrition plan and hypertrophy split.',
+          recordedBy: marcusTrainer ? marcusTrainer.user : adminUser._id,
+        },
+        {
+          member: rahulMember._id,
+          recordedAt: new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000), // 30 days ago
+          weight: 81.5,
+          bodyFatPercentage: 19.0,
+          chest: 106,
+          waist: 86,
+          hips: 99,
+          arms: 37,
+          thighs: 58.5,
+          notes: 'Notable body recomposition, core narrowing and arm circumference growth.',
+          recordedBy: marcusTrainer ? marcusTrainer.user : adminUser._id,
+        },
+        {
+          member: rahulMember._id,
+          recordedAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000), // 7 days ago
+          weight: 80.0,
+          bodyFatPercentage: 17.5,
+          chest: 107,
+          waist: 84,
+          hips: 98,
+          arms: 38,
+          thighs: 58,
+          notes: 'Goal milestone achieved! 5kg total fat loss with significant strength gain.',
+          recordedBy: marcusTrainer ? marcusTrainer.user : adminUser._id,
+        },
+      ];
+
+      for (const entry of progressEntries) {
+        await MemberProgress.create(entry);
+      }
+      console.log(`[Seed] Created ${progressEntries.length} fitness progress records for Rahul Patel`);
+    }
+
+    if (sarahMember) {
+      await MemberProgress.deleteMany({ member: sarahMember._id });
+      const now = new Date();
+      await MemberProgress.create({
+        member: sarahMember._id,
+        recordedAt: new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000),
+        weight: 62.5,
+        bodyFatPercentage: 21.0,
+        chest: 90,
+        waist: 70,
+        hips: 94,
+        arms: 28,
+        thighs: 52,
+        notes: 'Initial strength conditioning baseline.',
+        recordedBy: adminUser._id,
+      });
+      console.log(`[Seed] Created baseline progress record for Sarah Jenkins`);
+    }
+
+    // 9. Seed Notifications
+    console.log('[Seed] Seeding Notifications...');
+    const demoMemberUser = await User.findOne({ email: 'member@ironforge.test' });
+    const demoTrainerUser = await User.findOne({ email: 'trainer@ironforge.test' });
+
+    if (demoMemberUser) {
+      await Notification.deleteMany({ recipient: demoMemberUser._id });
+      const now = Date.now();
+      const memberNotifications = [
+        {
+          recipient: demoMemberUser._id,
+          type: 'payment_success',
+          title: 'Payment Received',
+          message: 'Payment of $99 for Premium Elite was successful. Membership is active!',
+          isRead: false,
+          createdAt: new Date(now - 3600 * 1000 * 2), // 2 hrs ago
+          idempotencyKey: `seed_notif_mem_1`,
+        },
+        {
+          recipient: demoMemberUser._id,
+          type: 'training_assigned',
+          title: 'New Training Plan Assigned',
+          message: 'A new workout program "Iron Hypertrophy Split" has been assigned to your profile.',
+          isRead: false,
+          createdAt: new Date(now - 3600 * 1000 * 24), // 1 day ago
+          idempotencyKey: `seed_notif_mem_2`,
+        },
+        {
+          recipient: demoMemberUser._id,
+          type: 'progress_updated',
+          title: 'New Fitness Metrics Logged',
+          message: 'Coach Marcus Vance logged updated fitness measurements for your profile.',
+          isRead: true,
+          readAt: new Date(now - 3600 * 1000 * 12),
+          createdAt: new Date(now - 3600 * 1000 * 48), // 2 days ago
+          idempotencyKey: `seed_notif_mem_3`,
+        },
+        {
+          recipient: demoMemberUser._id,
+          type: 'exercise_assigned',
+          title: 'New Exercise Assigned',
+          message: 'Coach Marcus Vance assigned "Barbell Bench Press" to your routine.',
+          isRead: true,
+          readAt: new Date(now - 3600 * 1000 * 36),
+          createdAt: new Date(now - 3600 * 1000 * 72), // 3 days ago
+          idempotencyKey: `seed_notif_mem_4`,
+        },
+      ];
+
+      for (const n of memberNotifications) {
+        await Notification.create(n);
+      }
+      console.log(`[Seed] Created ${memberNotifications.length} notifications for demo member.`);
+    }
+
+    if (demoTrainerUser) {
+      await Notification.deleteMany({ recipient: demoTrainerUser._id });
+      await Notification.create({
+        recipient: demoTrainerUser._id,
+        type: 'exercise_assigned',
+        title: 'New Exercise Assigned to Teaching Profile',
+        message: 'Exercise "Barbell Bench Press" has been added to your coaching catalog.',
+        isRead: false,
+        createdAt: new Date(),
+        idempotencyKey: `seed_notif_trn_1`,
+      });
+      console.log('[Seed] Created notification for demo trainer.');
+    }
+
+    if (adminUser) {
+      await Notification.deleteMany({ recipient: adminUser._id });
+      await Notification.create({
+        recipient: adminUser._id,
+        type: 'system',
+        title: 'System Initialized',
+        message: 'IronForge Gym Management System is operating with Phase 9 & 10 capabilities.',
+        isRead: true,
+        readAt: new Date(),
+        createdAt: new Date(),
+        idempotencyKey: `seed_notif_adm_1`,
+      });
+      console.log('[Seed] Created notification for admin.');
+    }
+
     console.log('====================================================');
-    console.log('🎉 Phase 8 Payments, Billing & Core Data Seeded Successfully:');
+    console.log('🎉 Phase 9 Progress & Phase 10 Notifications Seeded:');
     console.log('----------------------------------------------------');
     console.log('📦 Membership Plans: 3 plans (Basic, Standard, Premium Elite)');
     console.log('🏋️ Trainers:         3 trainers (Marcus Vance, Elena Rostova, Darius Thorne)');
@@ -1253,6 +1434,8 @@ const seedDatabase = async () => {
     console.log('📋 Training Plans:   3 active workout routines assigned to members');
     console.log('⏱️ Attendance Logs:   9 verified historical & active check-in sessions');
     console.log('💳 Payment Ledgers:  6 verified transactions (Razorpay, Cash, UPI, Card, Pending)');
+    console.log('📈 Fitness Progress: 5 chronological body composition logs');
+    console.log('🔔 Notifications:    6 multi-type user notifications');
     console.log('👤 Demo Admin:       admin@ironforge.test   | Pass: Admin@123');
     console.log('🏋️ Demo Trainer:     trainer@ironforge.test | Pass: Trainer@123');
     console.log('🏃 Demo Member:      member@ironforge.test  | Pass: Member@123');

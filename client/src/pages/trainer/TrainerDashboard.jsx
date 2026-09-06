@@ -27,6 +27,11 @@ import {
   LogIn,
   LogOut,
   Timer,
+  TrendingUp,
+  TrendingDown,
+  Scale,
+  LineChart,
+  RefreshCw,
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
@@ -38,6 +43,7 @@ import {
   exercisesApi,
   memberExerciseAssignmentsApi,
   attendanceApi,
+  progressApi,
 } from '../../services/api';
 import './TrainerDashboard.css';
 import '../admin/AdminDashboard.css';
@@ -78,8 +84,32 @@ export default function TrainerDashboard() {
   // Member Detail Inspector Modal
   const [selectedMember, setSelectedMember] = useState(null);
   const [selectedMemberPlan, setSelectedMemberPlan] = useState(null);
+  const [selectedMemberProgress, setSelectedMemberProgress] = useState([]);
+  const [selectedMemberProgressStats, setSelectedMemberProgressStats] = useState(null);
+  const [selectedMemberTrendPoints, setSelectedMemberTrendPoints] = useState([]);
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [detailModalTab, setDetailModalTab] = useState('profile'); // 'profile' | 'routine' | 'progress'
   const [loadingMemberPlan, setLoadingMemberPlan] = useState(false);
+  const [loadingMemberProgress, setLoadingMemberProgress] = useState(false);
+
+  // Trainer Progress Logging State
+  const [progressModalOpen, setProgressModalOpen] = useState(false);
+  const [editingProgressId, setEditingProgressId] = useState(null);
+  const [targetProgressMember, setTargetProgressMember] = useState(null);
+  const [progressForm, setProgressForm] = useState({
+    memberId: '',
+    weight: '',
+    bodyFatPercentage: '',
+    chest: '',
+    waist: '',
+    hips: '',
+    arms: '',
+    thighs: '',
+    notes: '',
+    recordedAt: '',
+  });
+  const [progressError, setProgressError] = useState('');
+  const [progressSubmitting, setProgressSubmitting] = useState(false);
 
   // Plan Builder Modal
   const [planModalOpen, setPlanModalOpen] = useState(false);
@@ -167,18 +197,129 @@ export default function TrainerDashboard() {
   };
 
   // Member Inspector
-  const handleOpenDetail = async (member) => {
+  const handleOpenDetail = async (member, initialTab = 'profile') => {
     setSelectedMember(member);
+    setDetailModalTab(initialTab);
     setDetailModalOpen(true);
     setSelectedMemberPlan(null);
+    setSelectedMemberProgress([]);
+    setSelectedMemberProgressStats(null);
+    setSelectedMemberTrendPoints([]);
     try {
       setLoadingMemberPlan(true);
-      const res = await trainingPlansApi.getByMemberId(member._id);
-      setSelectedMemberPlan(res?.activePlan || (res?.plans && res.plans[0]) || null);
+      setLoadingMemberProgress(true);
+      const [planRes, progressRes] = await Promise.all([
+        trainingPlansApi.getByMemberId(member._id).catch(() => null),
+        progressApi.getMemberProgress(member._id).catch(() => null),
+      ]);
+
+      setSelectedMemberPlan(planRes?.activePlan || (planRes?.plans && planRes.plans[0]) || null);
+      if (progressRes) {
+        setSelectedMemberProgress(progressRes.records || []);
+        setSelectedMemberProgressStats(progressRes.stats || null);
+        setSelectedMemberTrendPoints(progressRes.trendPoints || []);
+      }
     } catch (err) {
-      console.warn('Failed to load member plan:', err);
+      console.warn('Failed to load member details:', err);
     } finally {
       setLoadingMemberPlan(false);
+      setLoadingMemberProgress(false);
+    }
+  };
+
+  const handleOpenRecordProgress = (member, record = null) => {
+    setTargetProgressMember(member);
+    setEditingProgressId(record ? record._id : null);
+    setProgressError('');
+    if (record) {
+      setProgressForm({
+        memberId: member._id,
+        weight: record.weight !== null && record.weight !== undefined ? record.weight : '',
+        bodyFatPercentage: record.bodyFatPercentage !== null && record.bodyFatPercentage !== undefined ? record.bodyFatPercentage : '',
+        chest: record.chest !== null && record.chest !== undefined ? record.chest : '',
+        waist: record.waist !== null && record.waist !== undefined ? record.waist : '',
+        hips: record.hips !== null && record.hips !== undefined ? record.hips : '',
+        arms: record.arms !== null && record.arms !== undefined ? record.arms : '',
+        thighs: record.thighs !== null && record.thighs !== undefined ? record.thighs : '',
+        notes: record.notes || '',
+        recordedAt: record.recordedAt ? record.recordedAt.split('T')[0] : '',
+      });
+    } else {
+      setProgressForm({
+        memberId: member._id,
+        weight: '',
+        bodyFatPercentage: '',
+        chest: '',
+        waist: '',
+        hips: '',
+        arms: '',
+        thighs: '',
+        notes: '',
+        recordedAt: new Date().toISOString().split('T')[0],
+      });
+    }
+    setProgressModalOpen(true);
+  };
+
+  const handleSubmitProgress = async (e) => {
+    e.preventDefault();
+    setProgressError('');
+    setProgressSubmitting(true);
+
+    try {
+      const payload = {
+        memberId: progressForm.memberId,
+        weight: progressForm.weight !== '' ? Number(progressForm.weight) : undefined,
+        bodyFatPercentage: progressForm.bodyFatPercentage !== '' ? Number(progressForm.bodyFatPercentage) : undefined,
+        chest: progressForm.chest !== '' ? Number(progressForm.chest) : undefined,
+        waist: progressForm.waist !== '' ? Number(progressForm.waist) : undefined,
+        hips: progressForm.hips !== '' ? Number(progressForm.hips) : undefined,
+        arms: progressForm.arms !== '' ? Number(progressForm.arms) : undefined,
+        thighs: progressForm.thighs !== '' ? Number(progressForm.thighs) : undefined,
+        notes: progressForm.notes,
+        recordedAt: progressForm.recordedAt || undefined,
+      };
+
+      if (editingProgressId) {
+        await progressApi.update(editingProgressId, payload);
+        flashMessage('Athlete progress record updated.');
+      } else {
+        await progressApi.create(payload);
+        flashMessage('Athlete progress metrics logged successfully.');
+      }
+
+      setProgressModalOpen(false);
+
+      // Refresh inspector progress if open
+      if (selectedMember && selectedMember._id === progressForm.memberId) {
+        const res = await progressApi.getMemberProgress(progressForm.memberId);
+        if (res) {
+          setSelectedMemberProgress(res.records || []);
+          setSelectedMemberProgressStats(res.stats || null);
+          setSelectedMemberTrendPoints(res.trendPoints || []);
+        }
+      }
+    } catch (err) {
+      setProgressError(err.message || 'Failed to save progress metrics.');
+    } finally {
+      setProgressSubmitting(false);
+    }
+  };
+
+  const handleDeleteMemberProgress = async (recordId, memberId) => {
+    try {
+      await progressApi.delete(recordId);
+      flashMessage('Progress entry removed.');
+      if (selectedMember && selectedMember._id === memberId) {
+        const res = await progressApi.getMemberProgress(memberId);
+        if (res) {
+          setSelectedMemberProgress(res.records || []);
+          setSelectedMemberProgressStats(res.stats || null);
+          setSelectedMemberTrendPoints(res.trendPoints || []);
+        }
+      }
+    } catch (err) {
+      setError(err.message || 'Failed to delete record.');
     }
   };
 
@@ -669,9 +810,17 @@ export default function TrainerDashboard() {
                               variant="secondary"
                               size="sm"
                               icon={Eye}
-                              onClick={() => handleOpenDetail(m)}
+                              onClick={() => handleOpenDetail(m, 'profile')}
                             >
                               Details
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              icon={Scale}
+                              onClick={() => handleOpenDetail(m, 'progress')}
+                            >
+                              Progress
                             </Button>
                             <Button
                               variant="ghost"
@@ -1134,172 +1283,377 @@ export default function TrainerDashboard() {
         >
           {selectedMember && (
             <div className="detail-view-container">
-              {/* Member Overview */}
-              <div className="detail-grid">
-                <div className="detail-section">
-                  <span className="detail-section-title">
-                    <Users size={16} /> Athlete Info
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    <div className="detail-item">
-                      <span className="detail-label">Email</span>
-                      <span className="detail-value">{selectedMember.user?.email}</span>
-                    </div>
-                    <div className="detail-item">
-                      <span className="detail-label">Phone</span>
-                      <span className="detail-value">{selectedMember.phone || 'N/A'}</span>
-                    </div>
-                    <div className="detail-item">
-                      <span className="detail-label">Gender</span>
-                      <span className="detail-value" style={{ textTransform: 'capitalize' }}>
-                        {selectedMember.gender || 'Unspecified'}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="detail-section">
-                  <span className="detail-section-title">
-                    <HeartPulse size={16} /> Emergency & Plan
-                  </span>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
-                    <div className="detail-item">
-                      <span className="detail-label">Emergency Contact</span>
-                      <span className="detail-value">
-                        {selectedMember.emergencyContact?.name
-                          ? `${selectedMember.emergencyContact.name} (${selectedMember.emergencyContact.phone})`
-                          : 'None'}
-                      </span>
-                    </div>
-                    <div className="detail-item">
-                      <span className="detail-label">Membership Package</span>
-                      <span className="detail-value">
-                        {selectedMember.membershipPlan ? (
-                          <Badge variant="secondary" size="sm">
-                            {selectedMember.membershipPlan.name}
-                          </Badge>
-                        ) : (
-                          'No plan'
-                        )}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Training Plan Details */}
-              <div className="detail-section">
-                <div
+              {/* Modal Sub-Tabs */}
+              <div className="detail-modal-tabs" style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.25rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.75rem' }}>
+                <button
+                  type="button"
+                  className={`btn-subtab ${detailModalTab === 'profile' ? 'active' : ''}`}
+                  onClick={() => setDetailModalTab('profile')}
                   style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    marginBottom: '1rem',
+                    background: detailModalTab === 'profile' ? 'rgba(255, 106, 38, 0.15)' : 'none',
+                    color: detailModalTab === 'profile' ? 'var(--primary)' : 'var(--text-secondary)',
+                    border: '1px solid ' + (detailModalTab === 'profile' ? 'rgba(255, 106, 38, 0.4)' : 'transparent'),
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0.4rem 0.85rem',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
                   }}
                 >
-                  <span className="detail-section-title" style={{ marginBottom: 0 }}>
-                    <Dumbbell size={16} /> Active Training Routine
-                  </span>
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon={Plus}
-                    onClick={() => {
-                      setDetailModalOpen(false);
-                      handleOpenCreatePlan(selectedMember._id);
-                    }}
-                  >
-                    Assign New Plan
-                  </Button>
-                </div>
-
-                {loadingMemberPlan ? (
-                  <p style={{ color: 'var(--text-muted)' }}>Loading workout plan...</p>
-                ) : selectedMemberPlan ? (
-                  <div>
-                    <div
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        marginBottom: '0.75rem',
-                      }}
-                    >
-                      <h4 style={{ fontSize: '1.1rem', color: '#ffffff' }}>
-                        {selectedMemberPlan.planName}
-                      </h4>
-                      <Badge variant="outline" size="sm">
-                        {selectedMemberPlan.goal}
-                      </Badge>
-                    </div>
-
-                    {selectedMemberPlan.notes && (
-                      <p
-                        style={{
-                          fontSize: '0.85rem',
-                          background: 'rgba(255, 77, 0, 0.08)',
-                          borderLeft: '3px solid var(--primary)',
-                          padding: '0.5rem 0.75rem',
-                          borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
-                          marginBottom: '1rem',
-                          color: 'var(--text-secondary)',
-                        }}
-                      >
-                        <strong>Notes:</strong> {selectedMemberPlan.notes}
-                      </p>
-                    )}
-
-                    <div className="routine-exercises-list">
-                      {selectedMemberPlan.exercises?.map((item, idx) => (
-                        <div key={idx} className="routine-exercise-card">
-                          <div className="routine-exercise-header">
-                            <span className="routine-exercise-title">
-                              {idx + 1}. {item.exercise?.name || 'Exercise'}
-                            </span>
-                            <div className="routine-exercise-badges">
-                              <Badge variant="outline" size="sm">
-                                {item.exercise?.muscleGroup}
-                              </Badge>
-                              <Badge variant="primary" size="sm">
-                                {item.sets} Sets &times; {item.reps} Reps
-                              </Badge>
-                            </div>
-                          </div>
-
-                          <div className="routine-exercise-meta">
-                            {item.targetWeight > 0 && (
-                              <span className="routine-exercise-meta-item">
-                                Target: {item.targetWeight} kg
-                              </span>
-                            )}
-                            {item.duration > 0 && (
-                              <span className="routine-exercise-meta-item">
-                                Duration: {item.duration}s
-                              </span>
-                            )}
-                            <span className="routine-exercise-meta-item">
-                              ⏱️ Rest: {item.restTime}s
-                            </span>
-                          </div>
-
-                          {item.instructions && (
-                            <p className="routine-exercise-notes">
-                              &ldquo;{item.instructions}&rdquo;
-                            </p>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
-                    No active workout routine assigned to this athlete yet. Click &ldquo;Assign New
-                    Plan&rdquo; above to build one.
-                  </p>
-                )}
+                  Athlete Profile
+                </button>
+                <button
+                  type="button"
+                  className={`btn-subtab ${detailModalTab === 'routine' ? 'active' : ''}`}
+                  onClick={() => setDetailModalTab('routine')}
+                  style={{
+                    background: detailModalTab === 'routine' ? 'rgba(255, 106, 38, 0.15)' : 'none',
+                    color: detailModalTab === 'routine' ? 'var(--primary)' : 'var(--text-secondary)',
+                    border: '1px solid ' + (detailModalTab === 'routine' ? 'rgba(255, 106, 38, 0.4)' : 'transparent'),
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0.4rem 0.85rem',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Workout Routine {selectedMemberPlan && '✓'}
+                </button>
+                <button
+                  type="button"
+                  className={`btn-subtab ${detailModalTab === 'progress' ? 'active' : ''}`}
+                  onClick={() => setDetailModalTab('progress')}
+                  style={{
+                    background: detailModalTab === 'progress' ? 'rgba(255, 106, 38, 0.15)' : 'none',
+                    color: detailModalTab === 'progress' ? 'var(--primary)' : 'var(--text-secondary)',
+                    border: '1px solid ' + (detailModalTab === 'progress' ? 'rgba(255, 106, 38, 0.4)' : 'transparent'),
+                    borderRadius: 'var(--radius-md)',
+                    padding: '0.4rem 0.85rem',
+                    fontWeight: 700,
+                    fontSize: '0.85rem',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Fitness Progress ({selectedMemberProgress.length})
+                </button>
               </div>
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              {/* TAB 1: PROFILE */}
+              {detailModalTab === 'profile' && (
+                <div className="detail-grid">
+                  <div className="detail-section">
+                    <span className="detail-section-title">
+                      <Users size={16} /> Athlete Info
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      <div className="detail-item">
+                        <span className="detail-label">Email</span>
+                        <span className="detail-value">{selectedMember.user?.email}</span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Phone</span>
+                        <span className="detail-value">{selectedMember.phone || 'N/A'}</span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Gender</span>
+                        <span className="detail-value" style={{ textTransform: 'capitalize' }}>
+                          {selectedMember.gender || 'Unspecified'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="detail-section">
+                    <span className="detail-section-title">
+                      <HeartPulse size={16} /> Emergency & Plan
+                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                      <div className="detail-item">
+                        <span className="detail-label">Emergency Contact</span>
+                        <span className="detail-value">
+                          {selectedMember.emergencyContact?.name
+                            ? `${selectedMember.emergencyContact.name} (${selectedMember.emergencyContact.phone})`
+                            : 'None'}
+                        </span>
+                      </div>
+                      <div className="detail-item">
+                        <span className="detail-label">Membership Package</span>
+                        <span className="detail-value">
+                          {selectedMember.membershipPlan ? (
+                            <Badge variant="secondary" size="sm">
+                              {selectedMember.membershipPlan.name}
+                            </Badge>
+                          ) : (
+                            'No plan'
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 2: TRAINING ROUTINE */}
+              {detailModalTab === 'routine' && (
+                <div className="detail-section">
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    <span className="detail-section-title" style={{ marginBottom: 0 }}>
+                      <Dumbbell size={16} /> Active Training Routine
+                    </span>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={Plus}
+                      onClick={() => {
+                        setDetailModalOpen(false);
+                        handleOpenCreatePlan(selectedMember._id);
+                      }}
+                    >
+                      Assign New Plan
+                    </Button>
+                  </div>
+
+                  {loadingMemberPlan ? (
+                    <p style={{ color: 'var(--text-muted)' }}>Loading workout plan...</p>
+                  ) : selectedMemberPlan ? (
+                    <div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'space-between',
+                          marginBottom: '0.75rem',
+                        }}
+                      >
+                        <h4 style={{ fontSize: '1.1rem', color: '#ffffff' }}>
+                          {selectedMemberPlan.planName}
+                        </h4>
+                        <Badge variant="outline" size="sm">
+                          {selectedMemberPlan.goal}
+                        </Badge>
+                      </div>
+
+                      {selectedMemberPlan.notes && (
+                        <p
+                          style={{
+                            fontSize: '0.85rem',
+                            background: 'rgba(255, 77, 0, 0.08)',
+                            borderLeft: '3px solid var(--primary)',
+                            padding: '0.5rem 0.75rem',
+                            borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                            marginBottom: '1rem',
+                            color: 'var(--text-secondary)',
+                          }}
+                        >
+                          <strong>Notes:</strong> {selectedMemberPlan.notes}
+                        </p>
+                      )}
+
+                      <div className="routine-exercises-list">
+                        {selectedMemberPlan.exercises?.map((item, idx) => (
+                          <div key={idx} className="routine-exercise-card">
+                            <div className="routine-exercise-header">
+                              <span className="routine-exercise-title">
+                                {idx + 1}. {item.exercise?.name || 'Exercise'}
+                              </span>
+                              <div className="routine-exercise-badges">
+                                <Badge variant="outline" size="sm">
+                                  {item.exercise?.muscleGroup}
+                                </Badge>
+                                <Badge variant="primary" size="sm">
+                                  {item.sets} Sets &times; {item.reps} Reps
+                                </Badge>
+                              </div>
+                            </div>
+
+                            <div className="routine-exercise-meta">
+                              {item.targetWeight > 0 && (
+                                <span className="routine-exercise-meta-item">
+                                  Target: {item.targetWeight} kg
+                                </span>
+                              )}
+                              {item.duration > 0 && (
+                                <span className="routine-exercise-meta-item">
+                                  Duration: {item.duration}s
+                                </span>
+                              )}
+                              <span className="routine-exercise-meta-item">
+                                ⏱️ Rest: {item.restTime}s
+                              </span>
+                            </div>
+
+                            {item.instructions && (
+                              <p className="routine-exercise-notes">
+                                &ldquo;{item.instructions}&rdquo;
+                              </p>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                      No active workout routine assigned to this athlete yet. Click &ldquo;Assign New
+                      Plan&rdquo; above to build one.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* TAB 3: FITNESS PROGRESS */}
+              {detailModalTab === 'progress' && (
+                <div className="detail-section">
+                  <div
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      marginBottom: '1rem',
+                    }}
+                  >
+                    <span className="detail-section-title" style={{ marginBottom: 0 }}>
+                      <Activity size={16} /> Athlete Fitness Progress
+                    </span>
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon={Plus}
+                      onClick={() => handleOpenRecordProgress(selectedMember)}
+                    >
+                      Log Metrics for Athlete
+                    </Button>
+                  </div>
+
+                  {loadingMemberProgress ? (
+                    <p style={{ color: 'var(--text-muted)' }}>Loading progress records...</p>
+                  ) : selectedMemberProgressStats ? (
+                    <div>
+                      {/* Summary Cards */}
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0.75rem', marginBottom: '1rem' }}>
+                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem' }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', fontWeight: 700 }}>
+                            Current Weight
+                          </span>
+                          <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#ffffff' }}>
+                            {selectedMemberProgressStats.currentWeight !== null ? `${selectedMemberProgressStats.currentWeight} kg` : '—'}
+                          </span>
+                          {selectedMemberProgressStats.weightChange !== null && (
+                            <span style={{ fontSize: '0.75rem', color: selectedMemberProgressStats.weightChange <= 0 ? '#10b981' : 'var(--primary)', display: 'block' }}>
+                              {selectedMemberProgressStats.weightChange > 0 ? `+${selectedMemberProgressStats.weightChange}` : selectedMemberProgressStats.weightChange} kg change
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem' }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', fontWeight: 700 }}>
+                            Body Fat %
+                          </span>
+                          <span style={{ fontSize: '1.4rem', fontWeight: 800, color: '#00e5ff' }}>
+                            {selectedMemberProgressStats.currentBodyFat !== null ? `${selectedMemberProgressStats.currentBodyFat}%` : '—'}
+                          </span>
+                          {selectedMemberProgressStats.bodyFatChange !== null && (
+                            <span style={{ fontSize: '0.75rem', color: selectedMemberProgressStats.bodyFatChange <= 0 ? '#10b981' : 'var(--primary)', display: 'block' }}>
+                              {selectedMemberProgressStats.bodyFatChange > 0 ? `+${selectedMemberProgressStats.bodyFatChange}` : selectedMemberProgressStats.bodyFatChange}% change
+                            </span>
+                          )}
+                        </div>
+
+                        <div style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem' }}>
+                          <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', fontWeight: 700 }}>
+                            Logged Records
+                          </span>
+                          <span style={{ fontSize: '1.4rem', fontWeight: 800, color: 'var(--primary)' }}>
+                            {selectedMemberProgressStats.totalRecords}
+                          </span>
+                          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>
+                            {selectedMemberProgressStats.lastRecordedDate ? new Date(selectedMemberProgressStats.lastRecordedDate).toLocaleDateString() : 'None'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* History Table */}
+                      {selectedMemberProgress.length > 0 ? (
+                        <div className="table-responsive" style={{ maxHeight: '240px', overflowY: 'auto' }}>
+                          <table className="data-table" style={{ fontSize: '0.85rem' }}>
+                            <thead>
+                              <tr>
+                                <th>Date</th>
+                                <th>Weight</th>
+                                <th>Body Fat</th>
+                                <th>Chest / Waist / Hips / Arms / Thighs</th>
+                                <th>Notes</th>
+                                <th>Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {selectedMemberProgress.map((p) => (
+                                <tr key={p._id}>
+                                  <td style={{ fontWeight: 600 }}>
+                                    {p.recordedAt ? new Date(p.recordedAt).toLocaleDateString() : 'N/A'}
+                                  </td>
+                                  <td style={{ fontWeight: 800, color: '#ffffff' }}>
+                                    {p.weight !== null ? `${p.weight} kg` : '—'}
+                                  </td>
+                                  <td style={{ color: '#00e5ff' }}>
+                                    {p.bodyFatPercentage !== null ? `${p.bodyFatPercentage}%` : '—'}
+                                  </td>
+                                  <td>
+                                    <div style={{ display: 'flex', gap: '0.25rem', flexWrap: 'wrap', fontSize: '0.78rem' }}>
+                                      {p.chest && <span>C:{p.chest}</span>}
+                                      {p.waist && <span>W:{p.waist}</span>}
+                                      {p.hips && <span>H:{p.hips}</span>}
+                                      {p.arms && <span>A:{p.arms}</span>}
+                                      {p.thighs && <span>T:{p.thighs}</span>}
+                                    </div>
+                                  </td>
+                                  <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+                                    {p.notes || '—'}
+                                  </td>
+                                  <td>
+                                    <div style={{ display: 'flex', gap: '0.25rem' }}>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        icon={Edit2}
+                                        onClick={() => handleOpenRecordProgress(selectedMember, p)}
+                                        title="Edit entry"
+                                      />
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        icon={Trash2}
+                                        onClick={() => handleDeleteMemberProgress(p._id, selectedMember._id)}
+                                        title="Delete entry"
+                                      />
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                          No progress records logged for this athlete yet.
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p style={{ color: 'var(--text-muted)', fontSize: '0.9rem' }}>
+                      No progress entries yet. Click &ldquo;Log Metrics for Athlete&rdquo; to record baseline metrics.
+                    </p>
+                  )}
+                </div>
+              )}
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1rem' }}>
                 <Button variant="secondary" size="md" onClick={() => setDetailModalOpen(false)}>
                   Close
                 </Button>
@@ -1749,6 +2103,194 @@ export default function TrainerDashboard() {
               </div>
             </form>
           )}
+        </Modal>
+
+        {/* MODAL: LOG / EDIT ATHLETE FITNESS PROGRESS */}
+        <Modal
+          isOpen={progressModalOpen}
+          onClose={() => setProgressModalOpen(false)}
+          title={
+            editingProgressId
+              ? `Edit Fitness Metrics: ${targetProgressMember?.user?.name || 'Athlete'}`
+              : `Log Fitness Progress: ${targetProgressMember?.user?.name || 'Athlete'}`
+          }
+          subtitle="Record body weight, body fat %, and circumference measurements for this athlete."
+          size="md"
+        >
+          <form onSubmit={handleSubmitProgress}>
+            {progressError && (
+              <div
+                className="auth-error-alert"
+                style={{ marginBottom: '1rem' }}
+              >
+                <AlertCircle size={16} className="error-icon" />
+                <span>{progressError}</span>
+              </div>
+            )}
+
+            <div className="modal-form-grid">
+              <div className="form-field">
+                <label className="field-label">Weight (kg)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="20"
+                  max="500"
+                  className="field-input"
+                  placeholder="e.g. 82.5"
+                  value={progressForm.weight}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, weight: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Body Fat (%)</label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="1"
+                  max="75"
+                  className="field-input"
+                  placeholder="e.g. 19.5"
+                  value={progressForm.bodyFatPercentage}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, bodyFatPercentage: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Chest (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="20"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 104"
+                  value={progressForm.chest}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, chest: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Waist (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="20"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 86"
+                  value={progressForm.waist}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, waist: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Hips (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="20"
+                  max="250"
+                  className="field-input"
+                  placeholder="e.g. 98"
+                  value={progressForm.hips}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, hips: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Arms (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="10"
+                  max="100"
+                  className="field-input"
+                  placeholder="e.g. 38"
+                  value={progressForm.arms}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, arms: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Thighs (cm)</label>
+                <input
+                  type="number"
+                  step="0.5"
+                  min="15"
+                  max="150"
+                  className="field-input"
+                  placeholder="e.g. 60"
+                  value={progressForm.thighs}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, thighs: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Recorded Date</label>
+                <input
+                  type="date"
+                  className="field-input"
+                  value={progressForm.recordedAt}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, recordedAt: e.target.value })
+                  }
+                />
+              </div>
+
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Coach Notes & Assessment</label>
+                <textarea
+                  className="field-textarea"
+                  rows={3}
+                  placeholder="e.g. Visible delt separation, core hardening, recommended maintaining current caloric intake."
+                  value={progressForm.notes}
+                  onChange={(e) =>
+                    setProgressForm({ ...progressForm, notes: e.target.value })
+                  }
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                type="button"
+                variant="ghost"
+                size="md"
+                onClick={() => setProgressModalOpen(false)}
+                disabled={progressSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                variant="primary"
+                size="md"
+                disabled={progressSubmitting}
+              >
+                {progressSubmitting
+                  ? 'Saving Metrics...'
+                  : editingProgressId
+                  ? 'Update Metrics'
+                  : 'Save Athlete Metrics'}
+              </Button>
+            </div>
+          </form>
         </Modal>
       </div>
     </div>

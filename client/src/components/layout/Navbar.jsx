@@ -1,7 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
-import { Dumbbell, Menu, X, User, Sparkles, LogOut, LayoutDashboard, Shield, Award, UserCheck } from 'lucide-react';
+import { Dumbbell, Menu, X, User, Sparkles, LogOut, LayoutDashboard, Shield, Award, UserCheck, Bell, Check, CheckCheck, Trash2, Clock, CreditCard, Activity, RefreshCw } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { notificationsApi } from '../../services/api';
 import Button from '../common/Button';
 import Badge from '../common/Badge';
 import './Navbar.css';
@@ -15,7 +16,134 @@ export default function Navbar({ serverStatus }) {
   const navigate = useNavigate();
   const location = useLocation();
 
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const notificationsRef = useRef(null);
+
   const isHomePage = location.pathname === '/';
+
+  // Fetch unread notification count
+  const loadUnreadCount = async () => {
+    if (!isAuthenticated) return;
+    try {
+      const count = await notificationsApi.getUnreadCount();
+      setUnreadCount(count);
+    } catch (err) {
+      // silently handle background count fetch
+    }
+  };
+
+  // Fetch full notification list
+  const loadNotifications = async () => {
+    if (!isAuthenticated) return;
+    setLoadingNotifications(true);
+    try {
+      const data = await notificationsApi.getAll({ limit: 15 });
+      setNotifications(data.notifications || []);
+      setUnreadCount(data.unreadCount || 0);
+    } catch (err) {
+      console.error('Failed to load notifications:', err);
+    } finally {
+      setLoadingNotifications(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadUnreadCount();
+      const interval = setInterval(loadUnreadCount, 30000); // 30s polling
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated]);
+
+  // Handle click outside to close dropdown
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (notificationsRef.current && !notificationsRef.current.contains(e.target)) {
+        setNotificationsOpen(false);
+      }
+    };
+    if (notificationsOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [notificationsOpen]);
+
+  const toggleNotifications = () => {
+    const nextState = !notificationsOpen;
+    setNotificationsOpen(nextState);
+    if (nextState) {
+      loadNotifications();
+    }
+  };
+
+  const handleMarkAsRead = async (id, e) => {
+    e?.stopPropagation();
+    try {
+      await notificationsApi.markAsRead(id);
+      setNotifications((prev) =>
+        prev.map((n) => (n._id === id ? { ...n, isRead: true } : n))
+      );
+      setUnreadCount((prev) => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error('Failed to mark read:', err);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      await notificationsApi.markAllAsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, isRead: true })));
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Failed to mark all read:', err);
+    }
+  };
+
+  const handleDeleteNotification = async (id, e) => {
+    e?.stopPropagation();
+    try {
+      await notificationsApi.delete(id);
+      const target = notifications.find((n) => n._id === id);
+      if (target && !target.isRead) {
+        setUnreadCount((prev) => Math.max(0, prev - 1));
+      }
+      setNotifications((prev) => prev.filter((n) => n._id !== id));
+    } catch (err) {
+      console.error('Failed to delete notification:', err);
+    }
+  };
+
+  const getNotificationIcon = (type) => {
+    switch (type) {
+      case 'payment_success':
+      case 'membership_renewed':
+        return <CreditCard size={16} className="notif-icon-success" />;
+      case 'training_assigned':
+      case 'exercise_assigned':
+        return <Dumbbell size={16} className="notif-icon-primary" />;
+      case 'progress_updated':
+        return <Activity size={16} className="notif-icon-accent" />;
+      case 'account_status':
+        return <UserCheck size={16} className="notif-icon-warning" />;
+      default:
+        return <Bell size={16} className="notif-icon-default" />;
+    }
+  };
+
+  const formatRelativeTime = (dateStr) => {
+    if (!dateStr) return '';
+    const diffMs = Date.now() - new Date(dateStr).getTime();
+    const mins = Math.floor(diffMs / 60000);
+    if (mins < 1) return 'Just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hours = Math.floor(mins / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -151,6 +279,117 @@ export default function Navbar({ serverStatus }) {
           {isAuthenticated ? (
             /* Authenticated User Actions */
             <div className="navbar-user-group">
+              {/* Notification Bell with Dropdown */}
+              <div className="notification-bell-wrapper" ref={notificationsRef}>
+                <button
+                  type="button"
+                  className={`btn-notification-bell ${notificationsOpen ? 'active' : ''}`}
+                  onClick={toggleNotifications}
+                  aria-label="View notifications"
+                  title="Notifications"
+                >
+                  <Bell size={19} />
+                  {unreadCount > 0 && (
+                    <span className="notif-badge-pill">
+                      {unreadCount > 99 ? '99+' : unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {notificationsOpen && (
+                  <div className="notification-dropdown">
+                    <div className="notif-dropdown-header">
+                      <div className="notif-header-title">
+                        <Bell size={16} />
+                        <span>Notifications</span>
+                        {unreadCount > 0 && (
+                          <span className="notif-count-tag">{unreadCount} new</span>
+                        )}
+                      </div>
+                      <div className="notif-header-actions">
+                        {unreadCount > 0 && (
+                          <button
+                            type="button"
+                            className="btn-notif-action"
+                            onClick={handleMarkAllAsRead}
+                            title="Mark all as read"
+                          >
+                            <CheckCheck size={14} />
+                            <span>Mark all read</span>
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          className="btn-notif-action-icon"
+                          onClick={loadNotifications}
+                          title="Refresh notifications"
+                        >
+                          <RefreshCw size={13} className={loadingNotifications ? 'spin' : ''} />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="notif-dropdown-body">
+                      {loadingNotifications && notifications.length === 0 ? (
+                        <div className="notif-dropdown-empty">
+                          <RefreshCw size={20} className="spin text-muted" />
+                          <p>Loading alerts...</p>
+                        </div>
+                      ) : notifications.length === 0 ? (
+                        <div className="notif-dropdown-empty">
+                          <Bell size={24} className="text-muted" />
+                          <p>No notifications yet</p>
+                          <span className="notif-empty-sub">We'll alert you when updates arrive.</span>
+                        </div>
+                      ) : (
+                        <ul className="notif-dropdown-list">
+                          {notifications.map((item) => (
+                            <li
+                              key={item._id}
+                              className={`notif-dropdown-item ${!item.isRead ? 'unread' : 'read'}`}
+                            >
+                              <div className="notif-item-icon-wrap">
+                                {getNotificationIcon(item.type)}
+                              </div>
+                              <div className="notif-item-content">
+                                <div className="notif-item-header">
+                                  <span className="notif-item-title">{item.title}</span>
+                                  <span className="notif-item-time">
+                                    <Clock size={11} />
+                                    {formatRelativeTime(item.createdAt)}
+                                  </span>
+                                </div>
+                                <p className="notif-item-msg">{item.message}</p>
+                              </div>
+                              <div className="notif-item-actions">
+                                {!item.isRead && (
+                                  <button
+                                    type="button"
+                                    className="btn-item-action mark-read"
+                                    onClick={(e) => handleMarkAsRead(item._id, e)}
+                                    title="Mark as read"
+                                  >
+                                    <Check size={14} />
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  className="btn-item-action delete"
+                                  onClick={(e) => handleDeleteNotification(item._id, e)}
+                                  title="Remove"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <Link to={getDashboardPath(user?.role)}>
                 <Button
                   variant="primary"
