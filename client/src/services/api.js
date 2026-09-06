@@ -672,4 +672,157 @@ export const usersApi = {
   },
 };
 
+/**
+ * Attendance & Check-In Management API methods
+ */
+export const attendanceApi = {
+  checkIn: async () => {
+    const response = await fetch(`${API_BASE_URL}/attendance/check-in`, {
+      method: 'POST',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Check-in failed');
+    return data;
+  },
+
+  checkOut: async () => {
+    const response = await fetch(`${API_BASE_URL}/attendance/check-out`, {
+      method: 'PATCH',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Check-out failed');
+    return data;
+  },
+
+  getTodayStatus: async () => {
+    const response = await fetch(`${API_BASE_URL}/attendance/me/today`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch today attendance status');
+    return data.data;
+  },
+
+  getMyAttendance: async () => {
+    const response = await fetch(`${API_BASE_URL}/attendance/me`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch personal attendance history');
+    return data.data;
+  },
+
+  getTrainerAttendance: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.memberId) query.append('memberId', params.memberId);
+    if (params.status) query.append('status', params.status);
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.search) query.append('search', params.search);
+
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/attendance/trainer${queryString}`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch trainer roster attendance');
+    return data.data;
+  },
+
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.memberId) query.append('memberId', params.memberId);
+    if (params.trainerId) query.append('trainerId', params.trainerId);
+    if (params.status) query.append('status', params.status);
+    if (params.date) query.append('date', params.date);
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.search) query.append('search', params.search);
+
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/attendance${queryString}`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch attendance records');
+    return data.data;
+  },
+
+  getStats: async () => {
+    const response = await fetch(`${API_BASE_URL}/attendance/stats`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch attendance statistics');
+    return data.data?.stats;
+  },
+
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/attendance/${id}`, {
+      method: 'GET',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch attendance record');
+    return data.data?.record;
+  },
+
+  create: async (recordData) => {
+    const response = await fetch(`${API_BASE_URL}/attendance`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(recordData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to create attendance record');
+    return data.data?.attendance;
+  },
+
+  update: async (id, updateData) => {
+    const response = await fetch(`${API_BASE_URL}/attendance/${id}`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(updateData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update attendance record');
+    return data.data?.attendance;
+  },
+
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/attendance/${id}`, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete attendance record');
+    return data;
+  },
+};
+
+
 

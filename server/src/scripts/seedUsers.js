@@ -6,6 +6,7 @@ const Member = require('../models/Member');
 const MembershipPlan = require('../models/MembershipPlan');
 const Exercise = require('../models/Exercise');
 const TrainingPlan = require('../models/TrainingPlan');
+const Attendance = require('../models/Attendance');
 const connectDB = require('../config/db');
 
 const seedDatabase = async () => {
@@ -977,14 +978,158 @@ const seedDatabase = async () => {
       }
     }
 
+    // 6. Seed Attendance Records
+    console.log('[Seed] Seeding Attendance Records...');
+    const normalizeDate = (d) => new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), 0, 0, 0, 0));
+    const todayDate = normalizeDate(new Date());
+
+    const attendanceToSeed = [
+      // Rahul Patel (Primary member)
+      {
+        memberName: 'Rahul Patel',
+        daysAgo: 5,
+        inHour: 18,
+        inMin: 0,
+        outHour: 19,
+        outMin: 30,
+        status: 'completed',
+        notes: 'Lower body hypertrophy session.',
+      },
+      {
+        memberName: 'Rahul Patel',
+        daysAgo: 3,
+        inHour: 8,
+        inMin: 30,
+        outHour: 9,
+        outMin: 45,
+        status: 'completed',
+        notes: 'Upper body power session.',
+      },
+      {
+        memberName: 'Rahul Patel',
+        daysAgo: 1,
+        inHour: 9,
+        inMin: 0,
+        outHour: 10,
+        outMin: 30,
+        status: 'completed',
+        notes: 'Heavy bench press and core training.',
+      },
+      // Sarah Jenkins
+      {
+        memberName: 'Sarah Jenkins',
+        daysAgo: 4,
+        inHour: 7,
+        inMin: 30,
+        outHour: 9,
+        outMin: 0,
+        status: 'completed',
+        notes: 'Endurance conditioning.',
+      },
+      {
+        memberName: 'Sarah Jenkins',
+        daysAgo: 2,
+        inHour: 7,
+        inMin: 0,
+        outHour: 8,
+        outMin: 15,
+        status: 'completed',
+        notes: 'Cardio intervals & core recovery.',
+      },
+      {
+        memberName: 'Sarah Jenkins',
+        daysAgo: 0,
+        inHour: 8,
+        inMin: 0,
+        outHour: 9,
+        outMin: 15,
+        status: 'completed',
+        notes: 'Early morning conditioning circuit.',
+      },
+      // Priya Sharma
+      {
+        memberName: 'Priya Sharma',
+        daysAgo: 1,
+        inHour: 17,
+        inMin: 0,
+        outHour: 18,
+        outMin: 45,
+        status: 'completed',
+        notes: 'Strength progression check-in.',
+      },
+      {
+        memberName: 'Priya Sharma',
+        daysAgo: 0,
+        inHour: 10,
+        inMin: 15,
+        outHour: null,
+        outMin: null,
+        status: 'active',
+        notes: 'Floor warm-up in progress.',
+      },
+      // David Miller
+      {
+        memberName: 'David Miller',
+        daysAgo: 2,
+        inHour: 14,
+        inMin: 0,
+        outHour: 15,
+        outMin: 30,
+        status: 'completed',
+        notes: 'Independent squat session.',
+      },
+    ];
+
+    for (const item of attendanceToSeed) {
+      const member = memberMap[item.memberName];
+      if (!member) continue;
+
+      const recordDate = new Date(todayDate);
+      recordDate.setUTCDate(recordDate.getUTCDate() - item.daysAgo);
+
+      const checkIn = new Date(recordDate);
+      checkIn.setUTCHours(item.inHour, item.inMin, 0, 0);
+
+      let checkOut = null;
+      if (item.outHour !== null) {
+        checkOut = new Date(recordDate);
+        checkOut.setUTCHours(item.outHour, item.outMin, 0, 0);
+      }
+
+      let existingAttendance = await Attendance.findOne({
+        member: member._id,
+        date: recordDate,
+      });
+
+      if (!existingAttendance) {
+        await Attendance.create({
+          member: member._id,
+          date: recordDate,
+          checkInTime: checkIn,
+          checkOutTime: checkOut,
+          status: item.status,
+          markedBy: adminUser._id,
+          notes: item.notes,
+        });
+        console.log(`[Seed] Created Attendance: ${item.memberName} on ${recordDate.toISOString().slice(0, 10)} (${item.status})`);
+      } else {
+        existingAttendance.checkInTime = checkIn;
+        existingAttendance.checkOutTime = checkOut;
+        existingAttendance.status = item.status;
+        existingAttendance.notes = item.notes;
+        await existingAttendance.save();
+      }
+    }
+
     console.log('====================================================');
-    console.log('🎉 Phase 5 Training & Core Data Seeded Successfully:');
+    console.log('🎉 Phase 7 Attendance & Core Data Seeded Successfully:');
     console.log('----------------------------------------------------');
     console.log('📦 Membership Plans: 3 plans (Basic, Standard, Premium Elite)');
     console.log('🏋️ Trainers:         3 trainers (Marcus Vance, Elena Rostova, Darius Thorne)');
     console.log('🏃 Members:          6 members with active/inactive/expired statuses');
     console.log('📚 Exercise Catalog: 20 comprehensive exercises across all muscle groups');
     console.log('📋 Training Plans:   3 active workout routines assigned to members');
+    console.log('⏱️ Attendance Logs:   9 verified historical & active check-in sessions');
     console.log('👤 Demo Admin:       admin@ironforge.test   | Pass: Admin@123');
     console.log('🏋️ Demo Trainer:     trainer@ironforge.test | Pass: Trainer@123');
     console.log('🏃 Demo Member:      member@ironforge.test  | Pass: Member@123');

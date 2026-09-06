@@ -20,12 +20,17 @@ import {
   Flame,
   Target,
   Activity,
+  LogIn,
+  LogOut,
+  TrendingUp,
+  CheckSquare,
+  Timer,
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Modal from '../../components/common/Modal';
-import { dashboardApi, membersApi, trainingPlansApi } from '../../services/api';
+import { dashboardApi, membersApi, trainingPlansApi, attendanceApi } from '../../services/api';
 import './MemberDashboard.css';
 import '../admin/AdminDashboard.css';
 
@@ -38,6 +43,24 @@ export default function MemberDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Attendance States
+  const [todayStatus, setTodayStatus] = useState({
+    isCheckedIn: false,
+    isCompleted: false,
+    attendance: null,
+  });
+  const [todayLoading, setTodayLoading] = useState(false);
+  const [checkInLoading, setCheckInLoading] = useState(false);
+  const [checkOutLoading, setCheckOutLoading] = useState(false);
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [attendanceStats, setAttendanceStats] = useState({
+    totalDays: 0,
+    thisMonthDays: 0,
+    currentMonthPercentage: 0,
+    completedSessions: 0,
+  });
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
 
   // Edit Profile Modal
   const [editProfileModalOpen, setEditProfileModalOpen] = useState(false);
@@ -82,13 +105,87 @@ export default function MemberDashboard() {
     }
   }, []);
 
+  const loadTodayStatus = useCallback(async () => {
+    try {
+      setTodayLoading(true);
+      const res = await attendanceApi.getTodayStatus();
+      setTodayStatus(res || { isCheckedIn: false, isCompleted: false, attendance: null });
+    } catch (err) {
+      console.warn('[Attendance] Error fetching today status:', err.message);
+    } finally {
+      setTodayLoading(false);
+    }
+  }, []);
+
+  const loadAttendanceHistory = useCallback(async () => {
+    try {
+      setLoadingAttendance(true);
+      const res = await attendanceApi.getMyAttendance();
+      if (res) {
+        setAttendanceRecords(res.records || []);
+        if (res.stats) setAttendanceStats(res.stats);
+      }
+    } catch (err) {
+      console.warn('[Attendance] Error fetching history:', err.message);
+    } finally {
+      setLoadingAttendance(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadMemberData();
-  }, [loadMemberData]);
+    loadTodayStatus();
+    loadAttendanceHistory();
+  }, [loadMemberData, loadTodayStatus, loadAttendanceHistory]);
 
   const flashMessage = (msg) => {
     setSuccessMessage(msg);
     setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  const handleCheckIn = async () => {
+    try {
+      setCheckInLoading(true);
+      setError('');
+      const res = await attendanceApi.checkIn();
+      flashMessage(res.message || 'Checked in successfully. Have a great workout!');
+      await Promise.all([loadTodayStatus(), loadAttendanceHistory()]);
+    } catch (err) {
+      setError(err.message || 'Check-in failed');
+    } finally {
+      setCheckInLoading(false);
+    }
+  };
+
+  const handleCheckOut = async () => {
+    try {
+      setCheckOutLoading(true);
+      setError('');
+      const res = await attendanceApi.checkOut();
+      flashMessage(res.message || 'Checked out successfully. Session recorded!');
+      await Promise.all([loadTodayStatus(), loadAttendanceHistory()]);
+    } catch (err) {
+      setError(err.message || 'Check-out failed');
+    } finally {
+      setCheckOutLoading(false);
+    }
+  };
+
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '--:--';
+    return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const calculateDuration = (inStr, outStr) => {
+    if (!inStr) return 'N/A';
+    const start = new Date(inStr);
+    const end = outStr ? new Date(outStr) : new Date();
+    const diffMs = Math.max(0, end - start);
+    const diffMins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins} min`;
   };
 
   const handleUpdateProfile = async (e) => {
@@ -114,7 +211,7 @@ export default function MemberDashboard() {
       setEditProfileModalOpen(false);
       await loadMemberData();
     } catch (err) {
-      alert(err.message || 'Error updating profile');
+      setError(err.message || 'Error updating profile');
     } finally {
       setSubmitting(false);
     }
@@ -188,6 +285,107 @@ export default function MemberDashboard() {
           >
             Edit Profile
           </Button>
+        </Card>
+
+        {/* TODAY'S ATTENDANCE CHECK-IN / CHECK-OUT WIDGET */}
+        <Card className="attendance-widget-card glass-panel" padding="none">
+          <div className="attendance-widget-inner">
+            <div className="attendance-widget-left">
+              <div
+                className={`attendance-widget-icon ${
+                  todayStatus.isCompleted
+                    ? 'completed'
+                    : todayStatus.isCheckedIn
+                    ? 'active'
+                    : 'idle'
+                }`}
+              >
+                {todayStatus.isCompleted ? (
+                  <CheckCircle2 size={30} />
+                ) : todayStatus.isCheckedIn ? (
+                  <Activity size={30} />
+                ) : (
+                  <Clock size={30} />
+                )}
+              </div>
+              <div className="attendance-widget-info">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', marginBottom: '0.25rem' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--primary)' }}>
+                    Daily Check-In Pass
+                  </span>
+                  {todayStatus.isCompleted ? (
+                    <Badge variant="primary" size="sm">Session Completed</Badge>
+                  ) : todayStatus.isCheckedIn ? (
+                    <span className="status-pill status-active">Currently Checked In</span>
+                  ) : (
+                    <Badge variant="outline" size="sm">Not Checked In</Badge>
+                  )}
+                </div>
+                <h3>
+                  {todayStatus.isCompleted
+                    ? "Great job! You've completed today's gym session."
+                    : todayStatus.isCheckedIn
+                    ? 'Your workout session is active on the gym floor.'
+                    : 'Ready to crush today’s workout? Check in to IronForge.'}
+                </h3>
+                <div className="attendance-widget-meta">
+                  {todayStatus.isCheckedIn && (
+                    <>
+                      <span className="attendance-meta-chip">
+                        <LogIn size={13} className="text-highlight" />
+                        Check-in: <strong>{formatTime(todayStatus.attendance?.checkInTime)}</strong>
+                      </span>
+                      {todayStatus.isCompleted ? (
+                        <>
+                          <span className="attendance-meta-chip">
+                            <LogOut size={13} className="text-highlight" />
+                            Check-out: <strong>{formatTime(todayStatus.attendance?.checkOutTime)}</strong>
+                          </span>
+                          <span className="attendance-meta-chip">
+                            <Timer size={13} className="text-highlight" />
+                            Duration: <strong>{calculateDuration(todayStatus.attendance?.checkInTime, todayStatus.attendance?.checkOutTime)}</strong>
+                          </span>
+                        </>
+                      ) : (
+                        <span className="attendance-meta-chip">
+                          <Timer size={13} className="text-highlight" />
+                          Elapsed: <strong>{calculateDuration(todayStatus.attendance?.checkInTime, null)}</strong>
+                        </span>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div>
+              {!todayStatus.isCheckedIn ? (
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={LogIn}
+                  onClick={handleCheckIn}
+                  disabled={checkInLoading || todayLoading}
+                >
+                  {checkInLoading ? 'Checking In...' : 'Check In Now'}
+                </Button>
+              ) : !todayStatus.isCompleted ? (
+                <Button
+                  variant="secondary"
+                  size="md"
+                  icon={LogOut}
+                  onClick={handleCheckOut}
+                  disabled={checkOutLoading || todayLoading}
+                >
+                  {checkOutLoading ? 'Checking Out...' : 'Check Out Session'}
+                </Button>
+              ) : (
+                <Badge variant="primary" size="md" style={{ padding: '0.6rem 1rem', fontSize: '0.9rem' }}>
+                  <CheckCircle2 size={16} style={{ marginRight: '0.35rem' }} /> Session Recorded
+                </Badge>
+              )}
+            </div>
+          </div>
         </Card>
 
         {/* Main 2-Column Dashboard Grid */}
@@ -849,6 +1047,114 @@ export default function MemberDashboard() {
               </div>
             </Card>
           )}
+        </div>
+
+        {/* SECTION: MY ATTENDANCE RECORD & VISIT STATS */}
+        <div className="attendance-history-section">
+          <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Clock size={26} className="text-highlight" /> My Attendance & Gym Visits
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+                Track your consistency, check-in history, and gym workout sessions.
+              </p>
+            </div>
+            <Badge variant="primary" size="md">
+              {attendanceStats.thisMonthDays} Visits This Month
+            </Badge>
+          </div>
+
+          {/* 4 Attendance Metrics */}
+          <div className="attendance-stats-grid">
+            <div className="attendance-stat-box">
+              <span className="attendance-stat-label">Month Attendance Rate</span>
+              <span className="attendance-stat-value" style={{ color: '#34d399' }}>
+                {attendanceStats.currentMonthPercentage}%
+              </span>
+              <span className="attendance-stat-sub">Based on days passed this month</span>
+            </div>
+
+            <div className="attendance-stat-box">
+              <span className="attendance-stat-label">This Month Visits</span>
+              <span className="attendance-stat-value" style={{ color: '#00e5ff' }}>
+                {attendanceStats.thisMonthDays} Days
+              </span>
+              <span className="attendance-stat-sub">Current calendar month</span>
+            </div>
+
+            <div className="attendance-stat-box">
+              <span className="attendance-stat-label">Completed Sessions</span>
+              <span className="attendance-stat-value" style={{ color: 'var(--primary)' }}>
+                {attendanceStats.completedSessions}
+              </span>
+              <span className="attendance-stat-sub">Checked out successfully</span>
+            </div>
+
+            <div className="attendance-stat-box">
+              <span className="attendance-stat-label">Lifetime Total Visits</span>
+              <span className="attendance-stat-value">
+                {attendanceStats.totalDays} Days
+              </span>
+              <span className="attendance-stat-sub">All-time gym check-ins</span>
+            </div>
+          </div>
+
+          {/* Attendance History Table */}
+          <Card className="glass-panel" padding="none">
+            {attendanceRecords && attendanceRecords.length > 0 ? (
+              <div className="table-responsive">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Check-In Time</th>
+                      <th>Check-Out Time</th>
+                      <th>Duration</th>
+                      <th>Status</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {attendanceRecords.map((rec) => (
+                      <tr key={rec._id}>
+                        <td style={{ fontWeight: 600, color: '#ffffff' }}>
+                          {rec.date ? new Date(rec.date).toLocaleDateString() : 'N/A'}
+                        </td>
+                        <td>{formatTime(rec.checkInTime)}</td>
+                        <td>{formatTime(rec.checkOutTime)}</td>
+                        <td>
+                          <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                            {calculateDuration(rec.checkInTime, rec.checkOutTime)}
+                          </span>
+                        </td>
+                        <td>
+                          {rec.status === 'completed' ? (
+                            <Badge variant="primary" size="sm">Completed</Badge>
+                          ) : (
+                            <span className="status-pill status-active">Active</span>
+                          )}
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          {rec.notes || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state-box" style={{ padding: '2.5rem 1rem' }}>
+                <div className="empty-state-icon">
+                  <Clock size={28} />
+                </div>
+                <span className="empty-state-title">No Attendance Records Found</span>
+                <p style={{ fontSize: '0.88rem' }}>
+                  Use the Daily Check-In button above when you arrive at IronForge to start tracking your visits!
+                </p>
+              </div>
+            )}
+          </Card>
         </div>
 
         {/* EDIT PROFILE MODAL */}

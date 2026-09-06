@@ -23,12 +23,22 @@ import {
   Flame,
   Check,
   ChevronRight,
+  Clock,
+  LogIn,
+  LogOut,
+  Timer,
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Modal from '../../components/common/Modal';
-import { dashboardApi, trainingPlansApi, exercisesApi, memberExerciseAssignmentsApi } from '../../services/api';
+import {
+  dashboardApi,
+  trainingPlansApi,
+  exercisesApi,
+  memberExerciseAssignmentsApi,
+  attendanceApi,
+} from '../../services/api';
 import './TrainerDashboard.css';
 import '../admin/AdminDashboard.css';
 
@@ -36,7 +46,7 @@ export default function TrainerDashboard() {
   const { user } = useAuth();
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState('roster'); // 'roster' | 'plans' | 'exercises'
+  const [activeTab, setActiveTab] = useState('roster'); // 'roster' | 'plans' | 'exercises' | 'attendance'
 
   const [dashboardData, setDashboardData] = useState(null);
   const [assignedMembers, setAssignedMembers] = useState([]);
@@ -45,6 +55,19 @@ export default function TrainerDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
+
+  // Attendance States
+  const [trainerAttendance, setTrainerAttendance] = useState([]);
+  const [trainerAttendanceStats, setTrainerAttendanceStats] = useState({
+    totalRecords: 0,
+    todayCheckIns: 0,
+    currentlyActive: 0,
+    rosterCount: 0,
+  });
+  const [attendanceSearch, setAttendanceSearch] = useState('');
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('');
+  const [attendanceMemberFilter, setAttendanceMemberFilter] = useState('');
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
 
   // Searches & Filters
   const [memberSearch, setMemberSearch] = useState('');
@@ -88,8 +111,29 @@ export default function TrainerDashboard() {
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTargetPlan, setDeleteTargetPlan] = useState(null);
+  const [planModalError, setPlanModalError] = useState('');
+  const [deletePlanModalError, setDeletePlanModalError] = useState('');
 
   const [submitting, setSubmitting] = useState(false);
+
+  const loadTrainerAttendance = useCallback(async () => {
+    try {
+      setAttendanceLoading(true);
+      const params = {};
+      if (attendanceStatusFilter) params.status = attendanceStatusFilter;
+      if (attendanceMemberFilter) params.memberId = attendanceMemberFilter;
+      if (attendanceSearch) params.search = attendanceSearch;
+      const res = await attendanceApi.getTrainerAttendance(params);
+      if (res) {
+        setTrainerAttendance(res.records || []);
+        if (res.stats) setTrainerAttendanceStats(res.stats);
+      }
+    } catch (err) {
+      console.warn('[Trainer Attendance] Error:', err.message);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }, [attendanceStatusFilter, attendanceMemberFilter, attendanceSearch]);
 
   const loadTrainerData = useCallback(async () => {
     try {
@@ -114,7 +158,8 @@ export default function TrainerDashboard() {
 
   useEffect(() => {
     loadTrainerData();
-  }, [loadTrainerData]);
+    loadTrainerAttendance();
+  }, [loadTrainerData, loadTrainerAttendance]);
 
   const flashMessage = (msg) => {
     setSuccessMessage(msg);
@@ -247,16 +292,17 @@ export default function TrainerDashboard() {
   const handleSubmitPlan = async (e) => {
     e.preventDefault();
     if (!planForm.memberId) {
-      alert('Please select an athlete from your roster.');
+      setPlanModalError('Please select an athlete from your roster.');
       return;
     }
     if (planForm.exercises.length === 0) {
-      alert('Please add at least 1 exercise to the training plan.');
+      setPlanModalError('Please add at least 1 exercise to the training plan.');
       return;
     }
 
     try {
       setSubmitting(true);
+      setPlanModalError('');
       const payload = {
         memberId: planForm.memberId,
         planName: planForm.planName,
@@ -280,7 +326,7 @@ export default function TrainerDashboard() {
       setPlanModalOpen(false);
       await loadTrainerData();
     } catch (err) {
-      alert(err.message || 'Error saving training plan');
+      setPlanModalError(err.message || 'Error saving training plan');
     } finally {
       setSubmitting(false);
     }
@@ -290,13 +336,14 @@ export default function TrainerDashboard() {
     if (!deleteTargetPlan) return;
     try {
       setSubmitting(true);
+      setDeletePlanModalError('');
       await trainingPlansApi.delete(deleteTargetPlan._id);
       flashMessage(`Plan "${deleteTargetPlan.planName}" deleted.`);
       setDeleteModalOpen(false);
       setDeleteTargetPlan(null);
       await loadTrainerData();
     } catch (err) {
-      alert(err.message || 'Error deleting plan');
+      setDeletePlanModalError(err.message || 'Error deleting plan');
     } finally {
       setSubmitting(false);
     }
@@ -394,6 +441,23 @@ export default function TrainerDashboard() {
     const matchesMuscle = !exerciseMuscleFilter || ex.muscleGroup === exerciseMuscleFilter;
     return matchesSearch && matchesMuscle;
   });
+
+  const formatTime = (dateStr) => {
+    if (!dateStr) return '--:--';
+    return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const calculateDuration = (inStr, outStr) => {
+    if (!inStr) return 'N/A';
+    const start = new Date(inStr);
+    const end = outStr ? new Date(outStr) : new Date();
+    const diffMs = Math.max(0, end - start);
+    const diffMins = Math.floor(diffMs / 60000);
+    const hours = Math.floor(diffMins / 60);
+    const mins = diffMins % 60;
+    if (hours > 0) return `${hours}h ${mins}m`;
+    return `${mins} min`;
+  };
 
   return (
     <div className="dashboard-page">
@@ -518,6 +582,13 @@ export default function TrainerDashboard() {
           >
             <Layers size={16} />
             <span>Exercise Library ({exerciseLibrary.length})</span>
+          </button>
+          <button
+            className={`dashboard-tab-btn ${activeTab === 'attendance' ? 'active' : ''}`}
+            onClick={() => setActiveTab('attendance')}
+          >
+            <Clock size={16} />
+            <span>Roster Attendance ({trainerAttendance.length})</span>
           </button>
         </div>
 
@@ -904,6 +975,155 @@ export default function TrainerDashboard() {
           </div>
         )}
 
+        {/* TAB 4: ROSTER ATTENDANCE */}
+        {activeTab === 'attendance' && (
+          <Card className="glass-panel" padding="normal">
+            <div className="module-toolbar">
+              <div>
+                <h3 style={{ fontSize: '1.3rem', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <Clock size={22} className="text-highlight" /> Athlete Check-In & Attendance History
+                </h3>
+                <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                  Live attendance presence and training logs for athletes on your roster.
+                </p>
+              </div>
+
+              <div className="search-filter-group" style={{ flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div className="search-input-wrap">
+                  <Search size={16} className="search-icon" />
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search athlete by name or email..."
+                    value={attendanceSearch}
+                    onChange={(e) => setAttendanceSearch(e.target.value)}
+                  />
+                </div>
+
+                <select
+                  className="filter-select"
+                  value={attendanceMemberFilter}
+                  onChange={(e) => setAttendanceMemberFilter(e.target.value)}
+                >
+                  <option value="">All Roster Athletes</option>
+                  {assignedMembers.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.user?.name}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="filter-select"
+                  value={attendanceStatusFilter}
+                  onChange={(e) => setAttendanceStatusFilter(e.target.value)}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="active">Active Now</option>
+                  <option value="completed">Completed</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Attendance Metrics */}
+            <div className="attendance-stats-grid" style={{ marginBottom: '1.5rem' }}>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Today's Check-Ins</span>
+                <span className="attendance-stat-value" style={{ color: '#00e5ff' }}>
+                  {trainerAttendanceStats.todayCheckIns}
+                </span>
+                <span className="attendance-stat-sub">Athletes checked in today</span>
+              </div>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Currently Active</span>
+                <span className="attendance-stat-value" style={{ color: '#34d399' }}>
+                  {trainerAttendanceStats.currentlyActive}
+                </span>
+                <span className="attendance-stat-sub">On gym floor now</span>
+              </div>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Total Coached Athletes</span>
+                <span className="attendance-stat-value">
+                  {assignedMembers.length}
+                </span>
+                <span className="attendance-stat-sub">Active coaching roster</span>
+              </div>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Total Check-In Logs</span>
+                <span className="attendance-stat-value" style={{ color: 'var(--primary)' }}>
+                  {trainerAttendance.length}
+                </span>
+                <span className="attendance-stat-sub">Historical visits recorded</span>
+              </div>
+            </div>
+
+            {/* Attendance Table */}
+            {attendanceLoading ? (
+              <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                Loading roster attendance records...
+              </div>
+            ) : trainerAttendance && trainerAttendance.length > 0 ? (
+              <div className="table-responsive">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Athlete</th>
+                      <th>Date</th>
+                      <th>Check-In Time</th>
+                      <th>Check-Out Time</th>
+                      <th>Duration</th>
+                      <th>Status</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trainerAttendance.map((rec) => (
+                      <tr key={rec._id}>
+                        <td>
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            <strong style={{ color: '#ffffff' }}>{rec.member?.user?.name || 'Athlete'}</strong>
+                            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                              {rec.member?.user?.email}
+                            </span>
+                          </div>
+                        </td>
+                        <td>{rec.date ? new Date(rec.date).toLocaleDateString() : 'N/A'}</td>
+                        <td>{formatTime(rec.checkInTime)}</td>
+                        <td>{formatTime(rec.checkOutTime)}</td>
+                        <td>
+                          <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                            {calculateDuration(rec.checkInTime, rec.checkOutTime)}
+                          </span>
+                        </td>
+                        <td>
+                          {rec.status === 'completed' ? (
+                            <Badge variant="primary" size="sm">Completed</Badge>
+                          ) : (
+                            <span className="status-pill status-active">Active</span>
+                          )}
+                        </td>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          {rec.notes || '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state-box">
+                <div className="empty-state-icon">
+                  <Clock size={28} />
+                </div>
+                <span className="empty-state-title">No Attendance Records Found</span>
+                <p style={{ fontSize: '0.88rem' }}>
+                  No attendance logs match the current search or filter criteria for your roster athletes.
+                </p>
+              </div>
+            )}
+          </Card>
+        )}
+
         {/* MODAL: MEMBER DETAIL INSPECTOR */}
         <Modal
           isOpen={detailModalOpen}
@@ -1097,6 +1317,12 @@ export default function TrainerDashboard() {
           size="lg"
         >
           <form onSubmit={handleSubmitPlan}>
+            {planModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{planModalError}</span>
+              </div>
+            )}
             <div className="modal-form-grid">
               <div className="form-field">
                 <label className="field-label">Select Athlete *</label>
@@ -1304,6 +1530,12 @@ export default function TrainerDashboard() {
           title="Delete Workout Plan"
           size="sm"
         >
+          {deletePlanModalError && (
+            <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+              <AlertCircle size={18} style={{ flexShrink: 0 }} />
+              <span>{deletePlanModalError}</span>
+            </div>
+          )}
           <div style={{ textAlign: 'center', padding: '1rem 0' }}>
             <p
               style={{

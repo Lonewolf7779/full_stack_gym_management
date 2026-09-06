@@ -43,6 +43,7 @@ import {
   trainingPlansApi,
   trainerExerciseAssignmentsApi,
   usersApi,
+  attendanceApi,
 } from '../../services/api';
 import './AdminDashboard.css';
 
@@ -50,7 +51,7 @@ export default function AdminDashboard() {
   const { user } = useAuth();
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'members' | 'trainers' | 'exercises' | 'plans' | 'memberships'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'members' | 'trainers' | 'exercises' | 'plans' | 'memberships' | 'attendance'
 
   // Data States
   const [statsData, setStatsData] = useState(null);
@@ -58,6 +59,50 @@ export default function AdminDashboard() {
   const [trainers, setTrainers] = useState([]);
   const [plans, setPlans] = useState([]);
   const [exercises, setExercises] = useState([]);
+
+  // Attendance States
+  const [attendanceRecords, setAttendanceRecords] = useState([]);
+  const [attendanceStats, setAttendanceStats] = useState({
+    totalRecords: 0,
+    todayCheckIns: 0,
+    currentlyActive: 0,
+    todayCompleted: 0,
+    thisMonthRecords: 0,
+  });
+  const [attendanceSearch, setAttendanceSearch] = useState('');
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState('');
+  const [attendanceDateFilter, setAttendanceDateFilter] = useState('');
+  const [attendanceTrainerFilter, setAttendanceTrainerFilter] = useState('');
+  const [attendanceMemberFilter, setAttendanceMemberFilter] = useState('');
+  const [attendanceLoading, setAttendanceLoading] = useState(false);
+
+  // Attendance Form & Modal States
+  const [createAttendanceModalOpen, setCreateAttendanceModalOpen] = useState(false);
+  const [attendanceForm, setAttendanceForm] = useState({
+    memberId: '',
+    date: '',
+    checkInTime: '',
+    checkOutTime: '',
+    status: 'active',
+    notes: '',
+  });
+  const [attendanceModalError, setAttendanceModalError] = useState('');
+
+  const [editAttendanceModalOpen, setEditAttendanceModalOpen] = useState(false);
+  const [editingAttendance, setEditingAttendance] = useState(null);
+  const [editAttendanceForm, setEditAttendanceForm] = useState({
+    date: '',
+    checkInTime: '',
+    checkOutTime: '',
+    status: 'active',
+    notes: '',
+  });
+  const [editAttendanceModalError, setEditAttendanceModalError] = useState('');
+
+  const [deleteAttendanceModalOpen, setDeleteAttendanceModalOpen] = useState(false);
+  const [deleteAttendanceTarget, setDeleteAttendanceTarget] = useState(null);
+  const [deleteAttendanceError, setDeleteAttendanceError] = useState('');
+  const [attendanceSubmitting, setAttendanceSubmitting] = useState(false);
   const [trainingPlans, setTrainingPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -208,13 +253,184 @@ export default function AdminDashboard() {
     }
   }, []);
 
+  // Load Attendance Records and Stats
+  const loadAdminAttendance = useCallback(async () => {
+    try {
+      setAttendanceLoading(true);
+      const params = {};
+      if (attendanceSearch) params.search = attendanceSearch;
+      if (attendanceStatusFilter) params.status = attendanceStatusFilter;
+      if (attendanceDateFilter) params.date = attendanceDateFilter;
+      if (attendanceTrainerFilter) params.trainerId = attendanceTrainerFilter;
+      if (attendanceMemberFilter) params.memberId = attendanceMemberFilter;
+
+      const [recordsRes, statsRes] = await Promise.all([
+        attendanceApi.getAll(params),
+        attendanceApi.getStats(),
+      ]);
+
+      setAttendanceRecords(recordsRes?.records || []);
+      if (statsRes) setAttendanceStats(statsRes);
+    } catch (err) {
+      console.warn('[Admin Attendance] Error:', err.message);
+    } finally {
+      setAttendanceLoading(false);
+    }
+  }, [
+    attendanceSearch,
+    attendanceStatusFilter,
+    attendanceDateFilter,
+    attendanceTrainerFilter,
+    attendanceMemberFilter,
+  ]);
+
   useEffect(() => {
     loadDashboardData();
-  }, [loadDashboardData]);
+    loadAdminAttendance();
+  }, [loadDashboardData, loadAdminAttendance]);
 
   const flashMessage = (msg) => {
     setSuccessMessage(msg);
     setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  // --- Attendance Action Handlers ---
+  const handleOpenCreateAttendance = () => {
+    const now = new Date();
+    const nowTimeStr = now.toTimeString().slice(0, 5);
+    setAttendanceForm({
+      memberId: members[0]?._id || '',
+      date: now.toISOString().slice(0, 10),
+      checkInTime: nowTimeStr,
+      checkOutTime: '',
+      status: 'active',
+      notes: '',
+    });
+    setAttendanceModalError('');
+    setCreateAttendanceModalOpen(true);
+  };
+
+  const handleSubmitCreateAttendance = async (e) => {
+    e.preventDefault();
+    if (!attendanceForm.memberId) {
+      setAttendanceModalError('Please select a member.');
+      return;
+    }
+    try {
+      setAttendanceSubmitting(true);
+      setAttendanceModalError('');
+
+      const dateObj = new Date(attendanceForm.date);
+      let inTime = null;
+      if (attendanceForm.checkInTime) {
+        const [h, m] = attendanceForm.checkInTime.split(':');
+        inTime = new Date(dateObj);
+        inTime.setHours(Number(h), Number(m), 0, 0);
+      }
+
+      let outTime = null;
+      if (attendanceForm.checkOutTime) {
+        const [oh, om] = attendanceForm.checkOutTime.split(':');
+        outTime = new Date(dateObj);
+        outTime.setHours(Number(oh), Number(om), 0, 0);
+      }
+
+      await attendanceApi.create({
+        memberId: attendanceForm.memberId,
+        date: attendanceForm.date,
+        checkInTime: inTime,
+        checkOutTime: outTime,
+        status: attendanceForm.status,
+        notes: attendanceForm.notes,
+      });
+
+      flashMessage('Attendance record logged successfully.');
+      setCreateAttendanceModalOpen(false);
+      await loadAdminAttendance();
+    } catch (err) {
+      setAttendanceModalError(err.message || 'Failed to create attendance record.');
+    } finally {
+      setAttendanceSubmitting(false);
+    }
+  };
+
+  const handleOpenEditAttendance = (rec) => {
+    setEditingAttendance(rec);
+    const dateStr = rec.date ? new Date(rec.date).toISOString().slice(0, 10) : '';
+    const inTimeStr = rec.checkInTime
+      ? new Date(rec.checkInTime).toTimeString().slice(0, 5)
+      : '';
+    const outTimeStr = rec.checkOutTime
+      ? new Date(rec.checkOutTime).toTimeString().slice(0, 5)
+      : '';
+
+    setEditAttendanceForm({
+      date: dateStr,
+      checkInTime: inTimeStr,
+      checkOutTime: outTimeStr,
+      status: rec.status || 'active',
+      notes: rec.notes || '',
+    });
+    setEditAttendanceModalError('');
+    setEditAttendanceModalOpen(true);
+  };
+
+  const handleSubmitEditAttendance = async (e) => {
+    e.preventDefault();
+    if (!editingAttendance) return;
+    try {
+      setAttendanceSubmitting(true);
+      setEditAttendanceModalError('');
+
+      const dateObj = new Date(editAttendanceForm.date);
+      let inTime = undefined;
+      if (editAttendanceForm.checkInTime) {
+        const [h, m] = editAttendanceForm.checkInTime.split(':');
+        inTime = new Date(dateObj);
+        inTime.setHours(Number(h), Number(m), 0, 0);
+      }
+
+      let outTime = null;
+      if (editAttendanceForm.checkOutTime) {
+        const [oh, om] = editAttendanceForm.checkOutTime.split(':');
+        outTime = new Date(dateObj);
+        outTime.setHours(Number(oh), Number(om), 0, 0);
+      }
+
+      await attendanceApi.update(editingAttendance._id, {
+        date: editAttendanceForm.date,
+        checkInTime: inTime,
+        checkOutTime: outTime,
+        status: editAttendanceForm.status,
+        notes: editAttendanceForm.notes,
+      });
+
+      flashMessage('Attendance record corrected and updated.');
+      setEditAttendanceModalOpen(false);
+      setEditingAttendance(null);
+      await loadAdminAttendance();
+    } catch (err) {
+      setEditAttendanceModalError(err.message || 'Failed to update attendance record.');
+    } finally {
+      setAttendanceSubmitting(false);
+    }
+  };
+
+  const handleConfirmDeleteAttendance = async () => {
+    if (!deleteAttendanceTarget) return;
+    try {
+      setAttendanceSubmitting(true);
+      setDeleteAttendanceError('');
+      await attendanceApi.delete(deleteAttendanceTarget._id);
+      flashMessage('Attendance record deleted successfully.');
+      setDeleteAttendanceModalOpen(false);
+      setDeleteAttendanceTarget(null);
+      await loadAdminAttendance();
+    } catch (err) {
+      setDeleteAttendanceError(err.message || 'Failed to delete attendance record.');
+    } finally {
+      setAttendanceSubmitting(false);
+    }
   };
 
   // --- Account Status Modal Handlers ---
@@ -865,6 +1081,13 @@ export default function AdminDashboard() {
           >
             <CreditCard size={16} />
             <span>Memberships ({plans.length})</span>
+          </button>
+          <button
+            className={`dashboard-tab-btn ${activeTab === 'attendance' ? 'active' : ''}`}
+            onClick={() => setActiveTab('attendance')}
+          >
+            <Clock size={16} />
+            <span>Attendance ({attendanceRecords.length})</span>
           </button>
         </div>
 
@@ -1740,6 +1963,235 @@ export default function AdminDashboard() {
                 </Card>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* TAB 7: ATTENDANCE & CHECK-IN MANAGEMENT */}
+        {activeTab === 'attendance' && (
+          <div className="attendance-tab-content">
+            {/* Top 4 Attendance Statistics */}
+            <div className="attendance-stats-grid" style={{ marginBottom: '1.5rem' }}>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Today's Check-Ins</span>
+                <span className="attendance-stat-value" style={{ color: '#00e5ff' }}>
+                  {attendanceStats.todayCheckIns}
+                </span>
+                <span className="attendance-stat-sub">Athletes checked in today</span>
+              </div>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Currently Active</span>
+                <span className="attendance-stat-value" style={{ color: '#34d399' }}>
+                  {attendanceStats.currentlyActive}
+                </span>
+                <span className="attendance-stat-sub">Active workouts on floor</span>
+              </div>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">This Month Visits</span>
+                <span className="attendance-stat-value" style={{ color: 'var(--primary)' }}>
+                  {attendanceStats.thisMonthRecords}
+                </span>
+                <span className="attendance-stat-sub">Current calendar month</span>
+              </div>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">All-Time Check-Ins</span>
+                <span className="attendance-stat-value">
+                  {attendanceStats.totalRecords}
+                </span>
+                <span className="attendance-stat-sub">Total historical records</span>
+              </div>
+            </div>
+
+            {/* Attendance Management Toolbar */}
+            <Card className="glass-panel" padding="normal">
+              <div className="module-toolbar">
+                <div>
+                  <h3 style={{ fontSize: '1.3rem', marginBottom: '0.2rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <Clock size={22} className="text-highlight" /> Gym Attendance & Presence Log
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+                    Real-time member floor presence, historical attendance tracking, and administrative session management.
+                  </p>
+                </div>
+
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={Plus}
+                  onClick={handleOpenCreateAttendance}
+                >
+                  Log Attendance
+                </Button>
+              </div>
+
+              {/* Filters Bar */}
+              <div className="search-filter-group" style={{ margin: '1rem 0 1.5rem', flexWrap: 'wrap', gap: '0.65rem' }}>
+                <div className="search-input-wrap" style={{ flex: '1 1 240px' }}>
+                  <Search size={16} className="search-icon" />
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search by member name, email or notes..."
+                    value={attendanceSearch}
+                    onChange={(e) => setAttendanceSearch(e.target.value)}
+                  />
+                </div>
+
+                <select
+                  className="filter-select"
+                  value={attendanceStatusFilter}
+                  onChange={(e) => setAttendanceStatusFilter(e.target.value)}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="active">Active On Floor</option>
+                  <option value="completed">Completed Session</option>
+                </select>
+
+                <input
+                  type="date"
+                  className="filter-select"
+                  style={{ color: attendanceDateFilter ? '#ffffff' : 'var(--text-muted)' }}
+                  value={attendanceDateFilter}
+                  onChange={(e) => setAttendanceDateFilter(e.target.value)}
+                  title="Filter by Specific Date"
+                />
+
+                <select
+                  className="filter-select"
+                  value={attendanceTrainerFilter}
+                  onChange={(e) => setAttendanceTrainerFilter(e.target.value)}
+                >
+                  <option value="">All Assigned Coaches</option>
+                  {trainers.map((t) => (
+                    <option key={t._id} value={t._id}>
+                      {t.user?.name}
+                    </option>
+                  ))}
+                </select>
+
+                {(attendanceSearch || attendanceStatusFilter || attendanceDateFilter || attendanceTrainerFilter) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setAttendanceSearch('');
+                      setAttendanceStatusFilter('');
+                      setAttendanceDateFilter('');
+                      setAttendanceTrainerFilter('');
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+
+              {/* Attendance Table */}
+              {attendanceLoading ? (
+                <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                  Loading attendance records...
+                </div>
+              ) : attendanceRecords && attendanceRecords.length > 0 ? (
+                <div className="table-responsive">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Member</th>
+                        <th>Coach</th>
+                        <th>Date</th>
+                        <th>Check-In</th>
+                        <th>Check-Out</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                        <th>Logged By</th>
+                        <th>Notes</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {attendanceRecords.map((rec) => (
+                        <tr key={rec._id}>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <strong style={{ color: '#ffffff' }}>
+                                {rec.member?.user?.name || 'Member'}
+                              </strong>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                {rec.member?.user?.email}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                              {rec.member?.assignedTrainer?.user?.name || 'Unassigned'}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{ fontWeight: 600, color: '#ffffff' }}>
+                              {rec.date ? new Date(rec.date).toLocaleDateString() : 'N/A'}
+                            </span>
+                          </td>
+                          <td>{formatTime(rec.checkInTime)}</td>
+                          <td>{formatTime(rec.checkOutTime)}</td>
+                          <td>
+                            <span style={{ color: 'var(--text-secondary)', fontFamily: 'monospace' }}>
+                              {calculateDuration(rec.checkInTime, rec.checkOutTime)}
+                            </span>
+                          </td>
+                          <td>
+                            {rec.status === 'completed' ? (
+                              <Badge variant="primary" size="sm">Completed</Badge>
+                            ) : (
+                              <span className="status-pill status-active">Active</span>
+                            )}
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                              {rec.markedBy?.name || 'System'} ({rec.markedBy?.role || 'user'})
+                            </span>
+                          </td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: '0.85rem', maxWidth: '160px' }}>
+                            {rec.notes || '—'}
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn-icon-action"
+                                title="Edit & Correct Attendance"
+                                onClick={() => handleOpenEditAttendance(rec)}
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-icon-action delete"
+                                title="Delete Attendance Record"
+                                onClick={() => {
+                                  setDeleteAttendanceTarget(rec);
+                                  setDeleteAttendanceError('');
+                                  setDeleteAttendanceModalOpen(true);
+                                }}
+                              >
+                                <Trash2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="empty-state-box">
+                  <div className="empty-state-icon">
+                    <Clock size={28} />
+                  </div>
+                  <span className="empty-state-title">No Attendance Records Found</span>
+                  <p style={{ fontSize: '0.88rem' }}>
+                    No member check-ins match your search criteria. Click &ldquo;Log Attendance&rdquo; to manually record a visit.
+                  </p>
+                </div>
+              )}
+            </Card>
           </div>
         )}
 
@@ -2934,6 +3386,264 @@ export default function AdminDashboard() {
                   ? 'Deactivate Account'
                   : 'Activate Account'}
               </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* MODAL 9: LOG / CREATE ATTENDANCE */}
+        <Modal
+          isOpen={createAttendanceModalOpen}
+          onClose={() => setCreateAttendanceModalOpen(false)}
+          title="Log Gym Attendance"
+          subtitle="Record member check-in timestamp and attendance status."
+          size="md"
+        >
+          <form onSubmit={handleSubmitCreateAttendance}>
+            {attendanceModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{attendanceModalError}</span>
+              </div>
+            )}
+
+            <div className="modal-form-grid">
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Select Member *</label>
+                <select
+                  className="field-select"
+                  required
+                  value={attendanceForm.memberId}
+                  onChange={(e) => setAttendanceForm({ ...attendanceForm, memberId: e.target.value })}
+                >
+                  <option value="">-- Choose Member --</option>
+                  {members.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.user?.name} ({m.user?.email}) - {m.membershipPlan?.name || 'No Plan'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Attendance Date *</label>
+                <input
+                  type="date"
+                  required
+                  className="field-input"
+                  value={attendanceForm.date}
+                  onChange={(e) => setAttendanceForm({ ...attendanceForm, date: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Attendance Status *</label>
+                <select
+                  className="field-select"
+                  value={attendanceForm.status}
+                  onChange={(e) => setAttendanceForm({ ...attendanceForm, status: e.target.value })}
+                >
+                  <option value="active">Active On Floor</option>
+                  <option value="completed">Completed Session</option>
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Check-In Time</label>
+                <input
+                  type="time"
+                  className="field-input"
+                  value={attendanceForm.checkInTime}
+                  onChange={(e) => setAttendanceForm({ ...attendanceForm, checkInTime: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Check-Out Time (Optional)</label>
+                <input
+                  type="time"
+                  className="field-input"
+                  value={attendanceForm.checkOutTime}
+                  onChange={(e) => setAttendanceForm({ ...attendanceForm, checkOutTime: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Session Notes / Activity (Optional)</label>
+                <input
+                  type="text"
+                  className="field-input"
+                  placeholder="e.g. Legs & Core strength training, guest pass entry, etc."
+                  value={attendanceForm.notes}
+                  onChange={(e) => setAttendanceForm({ ...attendanceForm, notes: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                type="button"
+                onClick={() => setCreateAttendanceModalOpen(false)}
+                disabled={attendanceSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md" disabled={attendanceSubmitting}>
+                {attendanceSubmitting ? 'Logging...' : 'Save Attendance Record'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* MODAL 10: EDIT / CORRECT ATTENDANCE */}
+        <Modal
+          isOpen={editAttendanceModalOpen}
+          onClose={() => {
+            setEditAttendanceModalOpen(false);
+            setEditingAttendance(null);
+          }}
+          title={`Correct Attendance: ${editingAttendance?.member?.user?.name || 'Member'}`}
+          subtitle="Adjust check-in/out timestamps, status, or session notes."
+          size="md"
+        >
+          <form onSubmit={handleSubmitEditAttendance}>
+            {editAttendanceModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{editAttendanceModalError}</span>
+              </div>
+            )}
+
+            <div className="modal-form-grid">
+              <div className="form-field">
+                <label className="field-label">Attendance Date *</label>
+                <input
+                  type="date"
+                  required
+                  className="field-input"
+                  value={editAttendanceForm.date}
+                  onChange={(e) => setEditAttendanceForm({ ...editAttendanceForm, date: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Attendance Status *</label>
+                <select
+                  className="field-select"
+                  value={editAttendanceForm.status}
+                  onChange={(e) => setEditAttendanceForm({ ...editAttendanceForm, status: e.target.value })}
+                >
+                  <option value="active">Active On Floor</option>
+                  <option value="completed">Completed Session</option>
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Check-In Time</label>
+                <input
+                  type="time"
+                  className="field-input"
+                  value={editAttendanceForm.checkInTime}
+                  onChange={(e) => setEditAttendanceForm({ ...editAttendanceForm, checkInTime: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Check-Out Time</label>
+                <input
+                  type="time"
+                  className="field-input"
+                  value={editAttendanceForm.checkOutTime}
+                  onChange={(e) => setEditAttendanceForm({ ...editAttendanceForm, checkOutTime: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Session Notes</label>
+                <input
+                  type="text"
+                  className="field-input"
+                  placeholder="e.g. Corrected manual check-out time..."
+                  value={editAttendanceForm.notes}
+                  onChange={(e) => setEditAttendanceForm({ ...editAttendanceForm, notes: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                type="button"
+                onClick={() => {
+                  setEditAttendanceModalOpen(false);
+                  setEditingAttendance(null);
+                }}
+                disabled={attendanceSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md" disabled={attendanceSubmitting}>
+                {attendanceSubmitting ? 'Saving Changes...' : 'Update Record'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* MODAL 11: DELETE ATTENDANCE CONFIRMATION */}
+        <Modal
+          isOpen={deleteAttendanceModalOpen}
+          onClose={() => {
+            setDeleteAttendanceModalOpen(false);
+            setDeleteAttendanceTarget(null);
+          }}
+          title="Delete Attendance Record"
+          size="sm"
+        >
+          <div>
+            {deleteAttendanceError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{deleteAttendanceError}</span>
+              </div>
+            )}
+
+            <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+              <p style={{ color: 'var(--text-secondary)', fontSize: '0.95rem', lineHeight: '1.6', marginBottom: '1.5rem' }}>
+                Are you sure you want to delete the attendance record for{' '}
+                <strong style={{ color: '#ffffff' }}>
+                  {deleteAttendanceTarget?.member?.user?.name || 'this member'}
+                </strong>{' '}
+                on{' '}
+                <strong style={{ color: '#ffffff' }}>
+                  {deleteAttendanceTarget?.date ? new Date(deleteAttendanceTarget.date).toLocaleDateString() : ''}
+                </strong>?
+              </p>
+              <div style={{ display: 'flex', gap: '0.75rem', justifyContent: 'center' }}>
+                <Button
+                  variant="ghost"
+                  size="md"
+                  type="button"
+                  onClick={() => {
+                    setDeleteAttendanceModalOpen(false);
+                    setDeleteAttendanceTarget(null);
+                  }}
+                  disabled={attendanceSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="primary"
+                  size="md"
+                  type="button"
+                  disabled={attendanceSubmitting}
+                  onClick={handleConfirmDeleteAttendance}
+                  style={{ background: '#ef4444', borderColor: '#ef4444' }}
+                >
+                  {attendanceSubmitting ? 'Deleting...' : 'Yes, Delete Record'}
+                </Button>
+              </div>
             </div>
           </div>
         </Modal>
