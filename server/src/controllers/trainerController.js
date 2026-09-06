@@ -1,6 +1,9 @@
 const Trainer = require('../models/Trainer');
 const User = require('../models/User');
 const Member = require('../models/Member');
+const TrainingPlan = require('../models/TrainingPlan');
+const TrainerExerciseAssignment = require('../models/TrainerExerciseAssignment');
+const MemberExerciseAssignment = require('../models/MemberExerciseAssignment');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -18,7 +21,7 @@ const getTrainers = async (req, res, next) => {
     }
 
     let trainers = await Trainer.find(filter)
-      .populate('user', 'name email role createdAt')
+      .populate('user', 'name email role status createdAt')
       .sort({ createdAt: -1 });
 
     // Client/search filter by name or specialization if provided
@@ -68,14 +71,14 @@ const getTrainerById = async (req, res, next) => {
   try {
     const trainer = await Trainer.findById(req.params.id).populate(
       'user',
-      'name email role createdAt'
+      'name email role status createdAt'
     );
     if (!trainer) {
       return errorResponse(res, 'Trainer not found.', null, 404);
     }
 
     const assignedMembers = await Member.find({ assignedTrainer: trainer._id })
-      .populate('user', 'name email')
+      .populate('user', 'name email role status')
       .populate('membershipPlan', 'name');
 
     return successResponse(res, 'Trainer details retrieved.', {
@@ -98,7 +101,7 @@ const getTrainerProfile = async (req, res, next) => {
   try {
     const trainer = await Trainer.findOne({ user: req.user._id }).populate(
       'user',
-      'name email role createdAt'
+      'name email role status createdAt'
     );
 
     if (!trainer) {
@@ -106,7 +109,7 @@ const getTrainerProfile = async (req, res, next) => {
     }
 
     const assignedMembers = await Member.find({ assignedTrainer: trainer._id })
-      .populate('user', 'name email')
+      .populate('user', 'name email role status')
       .populate('membershipPlan', 'name price duration');
 
     const activeCount = assignedMembers.filter((m) => m.status === 'active').length;
@@ -276,10 +279,9 @@ const updateTrainer = async (req, res, next) => {
         : [];
     }
 
-    // Only admin can change status
+    // Only admin can change trainer profile domain status (does not alter User.status)
     if (status !== undefined && req.user.role === 'admin') {
       trainer.status = status;
-      await User.findByIdAndUpdate(trainer.user, { status });
     }
 
     await trainer.save();
@@ -309,11 +311,25 @@ const deleteTrainer = async (req, res, next) => {
       return errorResponse(res, 'Trainer not found.', null, 404);
     }
 
-    // Unassign members assigned to this trainer so relationships stay clean
-    await Member.updateMany(
-      { assignedTrainer: trainer._id },
-      { assignedTrainer: null }
-    );
+    // Safety check: Block deletion if trainer is referenced by members, training plans, or exercise assignments
+    const assignedMembersCount = await Member.countDocuments({ assignedTrainer: trainer._id });
+    const trainingPlansCount = await TrainingPlan.countDocuments({ trainer: trainer._id });
+    const trainerAssignmentsCount = await TrainerExerciseAssignment.countDocuments({ trainer: trainer._id });
+    const memberAssignmentsCount = await MemberExerciseAssignment.countDocuments({ trainer: trainer._id });
+
+    if (
+      assignedMembersCount > 0 ||
+      trainingPlansCount > 0 ||
+      trainerAssignmentsCount > 0 ||
+      memberAssignmentsCount > 0
+    ) {
+      return errorResponse(
+        res,
+        'Cannot delete trainer with active member assignments, training plans, or exercise records. Deactivate the account instead to preserve gym history.',
+        null,
+        409
+      );
+    }
 
     // Delete Trainer profile and linked User
     const userId = trainer.user;

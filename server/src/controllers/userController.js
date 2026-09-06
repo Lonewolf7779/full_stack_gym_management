@@ -34,17 +34,6 @@ const updateUserStatus = async (req, res, next) => {
     user.status = status;
     await user.save();
 
-    // Sync domain profile status
-    if (user.role === 'trainer') {
-      await Trainer.findOneAndUpdate({ user: user._id }, { status });
-    } else if (user.role === 'member') {
-      // If active, reactivate member profile; if inactive, deactivate member profile
-      await Member.findOneAndUpdate(
-        { user: user._id },
-        { status: status === 'inactive' ? 'inactive' : 'active' }
-      );
-    }
-
     const safeUser = {
       id: user._id,
       name: user.name,

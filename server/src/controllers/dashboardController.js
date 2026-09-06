@@ -42,18 +42,18 @@ const getAdminStats = async (req, res, next) => {
 
     // 5 Most recent members
     const recentMembers = await Member.find()
-      .populate('user', 'name email createdAt')
+      .populate('user', 'name email role status createdAt')
       .populate('membershipPlan', 'name price')
       .populate({
         path: 'assignedTrainer',
-        populate: { path: 'user', select: 'name' },
+        populate: { path: 'user', select: 'name email role status' },
       })
       .sort({ createdAt: -1 })
       .limit(5);
 
     // 5 Most recent trainers
     const recentTrainers = await Trainer.find()
-      .populate('user', 'name email createdAt')
+      .populate('user', 'name email role status createdAt')
       .sort({ createdAt: -1 })
       .limit(5);
 

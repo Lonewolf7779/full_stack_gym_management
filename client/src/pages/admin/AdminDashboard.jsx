@@ -150,6 +150,19 @@ export default function AdminDashboard() {
   const [assignSubmitting, setAssignSubmitting] = useState(false);
   const [assignError, setAssignError] = useState('');
 
+  // Modal Error States
+  const [memberModalError, setMemberModalError] = useState('');
+  const [trainerModalError, setTrainerModalError] = useState('');
+  const [planModalError, setPlanModalError] = useState('');
+  const [exerciseModalError, setExerciseModalError] = useState('');
+  const [deleteModalError, setDeleteModalError] = useState('');
+
+  // Account Status Confirmation Modal States
+  const [statusModalOpen, setStatusModalOpen] = useState(false);
+  const [statusTarget, setStatusTarget] = useState(null); // { id, name, email, role, currentStatus, targetStatus }
+  const [statusSubmitting, setStatusSubmitting] = useState(false);
+  const [statusError, setStatusError] = useState('');
+
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null); // { type, id, name }
 
@@ -204,33 +217,45 @@ export default function AdminDashboard() {
     setTimeout(() => setSuccessMessage(''), 4000);
   };
 
-  // --- Account Status Toggle Handler ---
-  const handleToggleUserStatus = async (userObj, currentStatus, label) => {
+  // --- Account Status Modal Handlers ---
+  const handleOpenStatusModal = (userObj, roleLabel) => {
     if (!userObj?._id) return;
+    const currentStatus = userObj.status || 'active';
     const targetStatus = currentStatus === 'active' ? 'inactive' : 'active';
-    const actionLabel = targetStatus === 'active' ? 'activate' : 'deactivate';
 
     if (userObj._id === user?.id && targetStatus === 'inactive') {
-      alert('You cannot deactivate your own administrator account.');
+      flashMessage('You cannot deactivate your own administrator account.');
       return;
     }
 
-    if (
-      !window.confirm(
-        `Are you sure you want to ${actionLabel} the account for ${label || userObj.name || 'this user'}?`
-      )
-    ) {
-      return;
-    }
+    setStatusTarget({
+      id: userObj._id,
+      name: userObj.name || 'User',
+      email: userObj.email || '',
+      role: roleLabel || userObj.role || 'user',
+      currentStatus,
+      targetStatus,
+    });
+    setStatusError('');
+    setStatusModalOpen(true);
+  };
 
+  const handleConfirmStatusChange = async () => {
+    if (!statusTarget?.id) return;
     try {
-      await usersApi.updateStatus(userObj._id, targetStatus);
+      setStatusSubmitting(true);
+      setStatusError('');
+      await usersApi.updateStatus(statusTarget.id, statusTarget.targetStatus);
       flashMessage(
-        `Account for ${label || userObj.name} has been ${targetStatus === 'active' ? 'activated' : 'deactivated'}.`
+        `Account for ${statusTarget.name} has been ${statusTarget.targetStatus === 'active' ? 'activated' : 'deactivated'}.`
       );
+      setStatusModalOpen(false);
+      setStatusTarget(null);
       await loadDashboardData();
     } catch (err) {
-      alert(err.message || `Failed to ${actionLabel} account.`);
+      setStatusError(err.message || 'Failed to update account status.');
+    } finally {
+      setStatusSubmitting(false);
     }
   };
 
@@ -297,6 +322,7 @@ export default function AdminDashboard() {
   // --- Member Handlers ---
   const handleOpenAddMember = () => {
     setEditingMember(null);
+    setMemberModalError('');
     setMemberForm({
       name: '',
       email: '',
@@ -318,6 +344,7 @@ export default function AdminDashboard() {
 
   const handleOpenEditMember = (m) => {
     setEditingMember(m);
+    setMemberModalError('');
     setMemberForm({
       name: m.user?.name || '',
       email: m.user?.email || '',
@@ -341,6 +368,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     try {
       setSubmitting(true);
+      setMemberModalError('');
       const payload = {
         name: memberForm.name,
         phone: memberForm.phone,
@@ -371,7 +399,7 @@ export default function AdminDashboard() {
       setMemberModalOpen(false);
       await loadDashboardData();
     } catch (err) {
-      alert(err.message || 'Error saving member');
+      setMemberModalError(err.message || 'Error saving member');
     } finally {
       setSubmitting(false);
     }
@@ -380,6 +408,7 @@ export default function AdminDashboard() {
   // --- Trainer Handlers ---
   const handleOpenAddTrainer = () => {
     setEditingTrainer(null);
+    setTrainerModalError('');
     setTrainerForm({
       name: '',
       email: '',
@@ -396,6 +425,7 @@ export default function AdminDashboard() {
 
   const handleOpenEditTrainer = (t) => {
     setEditingTrainer(t);
+    setTrainerModalError('');
     setTrainerForm({
       name: t.user?.name || '',
       email: t.user?.email || '',
@@ -414,6 +444,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     try {
       setSubmitting(true);
+      setTrainerModalError('');
       const payload = {
         name: trainerForm.name,
         phone: trainerForm.phone,
@@ -437,7 +468,7 @@ export default function AdminDashboard() {
       setTrainerModalOpen(false);
       await loadDashboardData();
     } catch (err) {
-      alert(err.message || 'Error saving trainer');
+      setTrainerModalError(err.message || 'Error saving trainer');
     } finally {
       setSubmitting(false);
     }
@@ -446,6 +477,7 @@ export default function AdminDashboard() {
   // --- Plan Handlers ---
   const handleOpenAddPlan = () => {
     setEditingPlan(null);
+    setPlanModalError('');
     setPlanForm({
       name: '',
       description: '',
@@ -459,6 +491,7 @@ export default function AdminDashboard() {
 
   const handleOpenEditPlan = (p) => {
     setEditingPlan(p);
+    setPlanModalError('');
     setPlanForm({
       name: p.name,
       description: p.description || '',
@@ -474,6 +507,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     try {
       setSubmitting(true);
+      setPlanModalError('');
       const payload = {
         name: planForm.name,
         description: planForm.description,
@@ -494,7 +528,7 @@ export default function AdminDashboard() {
       setPlanModalOpen(false);
       await loadDashboardData();
     } catch (err) {
-      alert(err.message || 'Error saving plan');
+      setPlanModalError(err.message || 'Error saving plan');
     } finally {
       setSubmitting(false);
     }
@@ -503,6 +537,7 @@ export default function AdminDashboard() {
   // --- Exercise Handlers ---
   const handleOpenAddExercise = () => {
     setEditingExercise(null);
+    setExerciseModalError('');
     setExerciseForm({
       name: '',
       category: 'Strength',
@@ -522,6 +557,7 @@ export default function AdminDashboard() {
 
   const handleOpenEditExercise = (ex) => {
     setEditingExercise(ex);
+    setExerciseModalError('');
     setExerciseForm({
       name: ex.name,
       category: ex.category || 'Strength',
@@ -543,6 +579,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     try {
       setSubmitting(true);
+      setExerciseModalError('');
       const payload = {
         name: exerciseForm.name,
         category: exerciseForm.category,
@@ -574,7 +611,7 @@ export default function AdminDashboard() {
       setExerciseModalOpen(false);
       await loadDashboardData();
     } catch (err) {
-      alert(err.message || 'Error saving exercise');
+      setExerciseModalError(err.message || 'Error saving exercise');
     } finally {
       setSubmitting(false);
     }
@@ -634,6 +671,7 @@ export default function AdminDashboard() {
     if (!deleteTarget) return;
     try {
       setSubmitting(true);
+      setDeleteModalError('');
       if (deleteTarget.type === 'member') {
         await membersApi.delete(deleteTarget.id);
         flashMessage(`Member ${deleteTarget.name} deleted.`);
@@ -654,7 +692,7 @@ export default function AdminDashboard() {
       setDeleteTarget(null);
       await loadDashboardData();
     } catch (err) {
-      alert(err.message || 'Error deleting item');
+      setDeleteModalError(err.message || 'Error deleting item');
     } finally {
       setSubmitting(false);
     }
@@ -871,7 +909,14 @@ export default function AdminDashboard() {
                             </td>
                             <td>{m.membershipPlan?.name || <span className="text-muted">None</span>}</td>
                             <td>
-                              <span className={`status-pill status-${m.status}`}>{m.status}</span>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', alignItems: 'flex-start' }}>
+                                <span className={`status-pill status-${m.user?.status || 'active'}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
+                                  Acc: {m.user?.status || 'active'}
+                                </span>
+                                <span className={`status-pill status-${m.status}`} style={{ fontSize: '0.68rem', padding: '0.1rem 0.45rem' }}>
+                                  Gym: {m.status}
+                                </span>
+                              </div>
                             </td>
                             <td>
                               <button
@@ -1032,7 +1077,20 @@ export default function AdminDashboard() {
                           )}
                         </td>
                         <td>
-                          <span className={`status-pill status-${m.status}`}>{m.status}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Account:</span>
+                              <span className={`status-pill status-${m.user?.status || 'active'}`} style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>
+                                {m.user?.status || 'active'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Member:</span>
+                              <span className={`status-pill status-${m.status}`} style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>
+                                {m.status}
+                              </span>
+                            </div>
+                          </div>
                         </td>
                         <td>
                           <div className="action-buttons-cell">
@@ -1054,18 +1112,18 @@ export default function AdminDashboard() {
                               <>
                                 <button
                                   className={`btn-icon-action ${
-                                    m.status === 'active' ? 'btn-icon-warning' : 'btn-icon-success'
+                                    m.user?.status === 'active' ? 'btn-icon-warning' : 'btn-icon-success'
                                   }`}
                                   title={
-                                    m.status === 'active'
+                                    m.user?.status === 'active'
                                       ? 'Deactivate Member Account'
                                       : 'Activate Member Account'
                                   }
                                   onClick={() =>
-                                    handleToggleUserStatus(m.user, m.status, m.user?.name)
+                                    handleOpenStatusModal(m.user, 'Member')
                                   }
                                 >
-                                  {m.status === 'active' ? (
+                                  {m.user?.status === 'active' ? (
                                     <UserX size={15} />
                                   ) : (
                                     <UserCheck size={15} />
@@ -1172,7 +1230,20 @@ export default function AdminDashboard() {
                           </span>
                         </td>
                         <td>
-                          <span className={`status-pill status-${t.status}`}>{t.status}</span>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', alignItems: 'flex-start' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Account:</span>
+                              <span className={`status-pill status-${t.user?.status || 'active'}`} style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>
+                                {t.user?.status || 'active'}
+                              </span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.35rem' }}>
+                              <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Coach:</span>
+                              <span className={`status-pill status-${t.status}`} style={{ fontSize: '0.7rem', padding: '0.1rem 0.5rem' }}>
+                                {t.status}
+                              </span>
+                            </div>
+                          </div>
                         </td>
                         <td>
                           <div className="action-buttons-cell">
@@ -1194,18 +1265,18 @@ export default function AdminDashboard() {
                               <>
                                 <button
                                   className={`btn-icon-action ${
-                                    t.status === 'active' ? 'btn-icon-warning' : 'btn-icon-success'
+                                    t.user?.status === 'active' ? 'btn-icon-warning' : 'btn-icon-success'
                                   }`}
                                   title={
-                                    t.status === 'active'
+                                    t.user?.status === 'active'
                                       ? 'Deactivate Coach Account'
                                       : 'Activate Coach Account'
                                   }
                                   onClick={() =>
-                                    handleToggleUserStatus(t.user, t.status, t.user?.name)
+                                    handleOpenStatusModal(t.user, 'Coach')
                                   }
                                 >
-                                  {t.status === 'active' ? (
+                                  {t.user?.status === 'active' ? (
                                     <UserX size={15} />
                                   ) : (
                                     <UserCheck size={15} />
@@ -1970,6 +2041,12 @@ export default function AdminDashboard() {
           size="lg"
         >
           <form onSubmit={handleSubmitMember}>
+            {memberModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{memberModalError}</span>
+              </div>
+            )}
             <div className="modal-form-grid">
               <div className="form-field">
                 <label className="field-label">Full Name *</label>
@@ -2160,6 +2237,12 @@ export default function AdminDashboard() {
           size="md"
         >
           <form onSubmit={handleSubmitTrainer}>
+            {trainerModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{trainerModalError}</span>
+              </div>
+            )}
             <div className="modal-form-grid">
               <div className="form-field modal-form-col-full">
                 <label className="field-label">Coach Name *</label>
@@ -2287,6 +2370,12 @@ export default function AdminDashboard() {
           size="lg"
         >
           <form onSubmit={handleSubmitExercise}>
+            {exerciseModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{exerciseModalError}</span>
+              </div>
+            )}
             <div className="modal-form-grid">
               <div className="form-field modal-form-col-full">
                 <label className="field-label">Exercise Name *</label>
@@ -2439,6 +2528,12 @@ export default function AdminDashboard() {
           size="md"
         >
           <form onSubmit={handleSubmitPlan}>
+            {planModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{planModalError}</span>
+              </div>
+            )}
             <div className="modal-form-grid">
               <div className="form-field modal-form-col-full">
                 <label className="field-label">Plan Name *</label>
@@ -2518,6 +2613,12 @@ export default function AdminDashboard() {
           size="sm"
         >
           <div style={{ textAlign: 'center', padding: '1rem 0' }}>
+            {deleteModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1.25rem', textAlign: 'left' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{deleteModalError}</span>
+              </div>
+            )}
             <p
               style={{
                 color: 'var(--text-secondary)',
@@ -2735,6 +2836,106 @@ export default function AdminDashboard() {
               </Button>
             </div>
           </form>
+        </Modal>
+
+        {/* MODAL 8: ACCOUNT ACTIVATION / DEACTIVATION CONFIRMATION */}
+        <Modal
+          isOpen={statusModalOpen}
+          onClose={() => {
+            setStatusModalOpen(false);
+            setStatusTarget(null);
+          }}
+          title={
+            statusTarget?.targetStatus === 'active'
+              ? `Activate Account: ${statusTarget?.name}`
+              : `Deactivate Account: ${statusTarget?.name}`
+          }
+          subtitle={`Confirm account status update for ${statusTarget?.email} (${statusTarget?.role}).`}
+          size="sm"
+        >
+          <div>
+            {statusError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{statusError}</span>
+              </div>
+            )}
+
+            <div style={{ marginBottom: '1.5rem', fontSize: '0.92rem', lineHeight: '1.6', color: 'var(--text-secondary)' }}>
+              {statusTarget?.targetStatus === 'inactive' ? (
+                <>
+                  <p style={{ marginBottom: '0.75rem' }}>
+                    Are you sure you want to deactivate the account for{' '}
+                    <strong style={{ color: '#ffffff' }}>{statusTarget?.name}</strong>?
+                  </p>
+                  <div
+                    style={{
+                      background: 'rgba(245, 158, 11, 0.1)',
+                      border: '1px solid rgba(245, 158, 11, 0.25)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.75rem 1rem',
+                      color: '#fbbf24',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    <strong>Note:</strong> Deactivating will prevent this user from logging in. All historical workout records, memberships, and assigned data will remain intact.
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p style={{ marginBottom: '0.75rem' }}>
+                    Are you sure you want to reactivate the account for{' '}
+                    <strong style={{ color: '#ffffff' }}>{statusTarget?.name}</strong>?
+                  </p>
+                  <div
+                    style={{
+                      background: 'rgba(16, 185, 129, 0.1)',
+                      border: '1px solid rgba(16, 185, 129, 0.25)',
+                      borderRadius: 'var(--radius-sm)',
+                      padding: '0.75rem 1rem',
+                      color: '#34d399',
+                      fontSize: '0.85rem',
+                    }}
+                  >
+                    <strong>Note:</strong> Reactivating will allow this user to log in and access their dashboard immediately.
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                type="button"
+                onClick={() => {
+                  setStatusModalOpen(false);
+                  setStatusTarget(null);
+                }}
+                disabled={statusSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                variant="primary"
+                size="md"
+                disabled={statusSubmitting}
+                onClick={handleConfirmStatusChange}
+                style={
+                  statusTarget?.targetStatus === 'inactive'
+                    ? { background: '#f59e0b', borderColor: '#f59e0b' }
+                    : { background: '#10b981', borderColor: '#10b981' }
+                }
+              >
+                {statusSubmitting
+                  ? 'Processing...'
+                  : statusTarget?.targetStatus === 'inactive'
+                  ? 'Deactivate Account'
+                  : 'Activate Account'}
+              </Button>
+            </div>
+          </div>
         </Modal>
       </div>
     </div>

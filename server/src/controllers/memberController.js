@@ -2,6 +2,8 @@ const Member = require('../models/Member');
 const User = require('../models/User');
 const Trainer = require('../models/Trainer');
 const MembershipPlan = require('../models/MembershipPlan');
+const TrainingPlan = require('../models/TrainingPlan');
+const MemberExerciseAssignment = require('../models/MemberExerciseAssignment');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -38,11 +40,11 @@ const getMembers = async (req, res, next) => {
     }
 
     let members = await Member.find(filter)
-      .populate('user', 'name email role createdAt')
+      .populate('user', 'name email role status createdAt')
       .populate('membershipPlan', 'name price duration features')
       .populate({
         path: 'assignedTrainer',
-        populate: { path: 'user', select: 'name email' },
+        populate: { path: 'user', select: 'name email role status' },
       })
       .sort({ createdAt: -1 });
 
@@ -74,11 +76,11 @@ const getMembers = async (req, res, next) => {
 const getMemberById = async (req, res, next) => {
   try {
     const member = await Member.findById(req.params.id)
-      .populate('user', 'name email role createdAt')
+      .populate('user', 'name email role status createdAt')
       .populate('membershipPlan', 'name price duration features status')
       .populate({
         path: 'assignedTrainer',
-        populate: { path: 'user', select: 'name email' },
+        populate: { path: 'user', select: 'name email role status' },
       });
 
     if (!member) {
@@ -111,11 +113,11 @@ const getMemberById = async (req, res, next) => {
 const getMemberProfile = async (req, res, next) => {
   try {
     let member = await Member.findOne({ user: req.user._id })
-      .populate('user', 'name email role createdAt')
+      .populate('user', 'name email role status createdAt')
       .populate('membershipPlan', 'name price duration features status')
       .populate({
         path: 'assignedTrainer',
-        populate: { path: 'user', select: 'name email' },
+        populate: { path: 'user', select: 'name email role status' },
       });
 
     // Auto-create empty member profile if registered but profile document not created yet
@@ -124,7 +126,7 @@ const getMemberProfile = async (req, res, next) => {
         user: req.user._id,
         status: 'active',
       });
-      member = await Member.findById(member._id).populate('user', 'name email role createdAt');
+      member = await Member.findById(member._id).populate('user', 'name email role status createdAt');
     }
 
     // Calculate days remaining if active membership exists
@@ -354,11 +356,9 @@ const updateMember = async (req, res, next) => {
         }
       }
 
+      // Admin updates member profile domain status (does not alter User.status)
       if (status !== undefined) {
         member.status = status;
-        await User.findByIdAndUpdate(member.user, {
-          status: status === 'inactive' ? 'inactive' : 'active',
-        });
       }
       if (notes !== undefined) member.notes = notes;
     }
@@ -370,7 +370,7 @@ const updateMember = async (req, res, next) => {
       .populate('membershipPlan', 'name price duration')
       .populate({
         path: 'assignedTrainer',
-        populate: { path: 'user', select: 'name email' },
+        populate: { path: 'user', select: 'name email role status' },
       });
 
     return successResponse(res, 'Member profile updated successfully.', {
@@ -391,6 +391,19 @@ const deleteMember = async (req, res, next) => {
     const member = await Member.findById(req.params.id);
     if (!member) {
       return errorResponse(res, 'Member not found.', null, 404);
+    }
+
+    // Safety check: Block deletion if member has active training plans or assigned exercises
+    const trainingPlansCount = await TrainingPlan.countDocuments({ member: member._id });
+    const memberAssignmentsCount = await MemberExerciseAssignment.countDocuments({ member: member._id });
+
+    if (trainingPlansCount > 0 || memberAssignmentsCount > 0) {
+      return errorResponse(
+        res,
+        'Cannot delete member with active training plans or assigned exercise records. Deactivate the account instead to preserve gym history.',
+        null,
+        409
+      );
     }
 
     const userId = member.user;

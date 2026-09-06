@@ -432,13 +432,156 @@ async function runTests() {
   assert(publicEscalateRes.status === 201, '61. Public register succeeds');
   assert(publicEscalateRes.data.data.user.role === 'member', '62. Public registration role is forced to member (admin escalation denied)');
 
+  // --- SECTION 8.1: ACCOUNT STATUS VS DOMAIN STATUS SEPARATION ---
+  console.log('\n--- SECTION 8.1: Status Separation (User.status vs Domain Status) ---');
+
+  // Verify Trainer A status initially: domain=active, user=active
+  const tAGet1 = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/trainers/${trainerAProfile._id}`, method: 'GET', headers: { Cookie: adminCookie } }
+  );
+  assert(tAGet1.status === 200, '63. Fetched Trainer A details');
+  assert(tAGet1.data.data.trainer.status === 'active', '64. Trainer A domain status is active');
+  assert(tAGet1.data.data.trainer.user.status === 'active', '65. Trainer A user account status is active');
+
+  // Deactivate Trainer A account status -> User.status becomes inactive, but Trainer.status remains active
+  const deactTrainerAcc = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/users/${trainerAProfile.user._id}/status`, method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { status: 'inactive' }
+  );
+  assert(deactTrainerAcc.status === 200, '66. Deactivated Trainer A User account');
+
+  const tAGet2 = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/trainers/${trainerAProfile._id}`, method: 'GET', headers: { Cookie: adminCookie } }
+  );
+  assert(tAGet2.data.data.trainer.user.status === 'inactive', '67. Trainer A user account status updated to inactive');
+  assert(tAGet2.data.data.trainer.status === 'active', '68. Trainer A domain status remained active (decoupled from User.status)');
+
+  // Reactivate Trainer A account status
+  await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/users/${trainerAProfile.user._id}/status`, method: 'PATCH', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { status: 'active' }
+  );
+
+  // Update Trainer A domain status to inactive via PUT /api/trainers/:id -> Trainer.status becomes inactive, User.status remains active
+  const deactTrainerDomain = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/trainers/${trainerAProfile._id}`, method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { status: 'inactive' }
+  );
+  assert(deactTrainerDomain.status === 200, '69. Updated Trainer A domain status to inactive');
+
+  const tAGet3 = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/trainers/${trainerAProfile._id}`, method: 'GET', headers: { Cookie: adminCookie } }
+  );
+  assert(tAGet3.data.data.trainer.status === 'inactive', '70. Trainer A domain status is now inactive');
+  assert(tAGet3.data.data.trainer.user.status === 'active', '71. Trainer A User account status remained active (domain edit did not touch User.status)');
+
+  // Trainer A can still log in because User.status is active
+  const trainerALoginCheck = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    { email: trainerAEmail, password: trainerAPassword }
+  );
+  assert(trainerALoginCheck.status === 200, '72. Trainer A can log in when domain status is inactive but account status is active');
+
+  // Restore Trainer A domain status to active
+  await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/trainers/${trainerAProfile._id}`, method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { status: 'active' }
+  );
+
+  // Verify Member A separation: change Member A domain status to expired -> User.status remains active
+  const setMemberExpired = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/members/${memberAProfile._id}`, method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { status: 'expired' }
+  );
+  assert(setMemberExpired.status === 200, '73. Updated Member A domain status to expired');
+
+  const mAGet1 = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/members/${memberAProfile._id}`, method: 'GET', headers: { Cookie: adminCookie } }
+  );
+  assert(mAGet1.data.data.member.status === 'expired', '74. Member A domain status is expired');
+  assert(mAGet1.data.data.member.user.status === 'active', '75. Member A User account status remained active');
+
+  // Member A can still log in (with new password)
+  const memberALoginCheck = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/auth/login', method: 'POST', headers: { 'Content-Type': 'application/json' } },
+    { email: memberAEmail, password: newMemberAPassword }
+  );
+  assert(memberALoginCheck.status === 200, '76. Member A can log in when membership is expired but account is active');
+
+  // Restore Member A domain status
+  await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/members/${memberAProfile._id}`, method: 'PUT', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { status: 'active' }
+  );
+
+  // --- SECTION 8.2: DELETION REFERENCE INTEGRITY GUARDS (HTTP 409) ---
+  console.log('\n--- SECTION 8.2: Deletion Reference Integrity Guards (HTTP 409) ---');
+
+  // Trainer B is assigned to Member A. Attempt to delete Trainer B -> MUST return 409
+  const deleteReferencedTrainerRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/trainers/${trainerBProfile._id}`, method: 'DELETE', headers: { Cookie: adminCookie } }
+  );
+  assert(deleteReferencedTrainerRes.status === 409, '77. Deleting Trainer with assigned members rejected with HTTP 409');
+  assert(
+    deleteReferencedTrainerRes.data.message && (deleteReferencedTrainerRes.data.message.includes('assignment') || deleteReferencedTrainerRes.data.message.includes('Deactivate') || deleteReferencedTrainerRes.data.message.includes('history')),
+    '78. Conflict message explains active references exist and recommends deactivation'
+  );
+
+  // Assign exercise to Member A so Member A has references
+  const exerciseFixtureRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/exercises', method: 'GET', headers: { Cookie: adminCookie } }
+  );
+  const exFixture = exerciseFixtureRes.data.data.exercises[0];
+
+  if (exFixture) {
+    await request(
+      { hostname: '127.0.0.1', port: 5000, path: '/api/member-exercise-assignments', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: trainerBCookie } },
+      { memberId: memberAProfile._id, exerciseId: exFixture._id, notes: 'Test assignment' }
+    );
+  }
+
+  // Attempt to delete Member A with exercise assignment / history -> MUST return 409
+  const deleteReferencedMemberRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/members/${memberAProfile._id}`, method: 'DELETE', headers: { Cookie: adminCookie } }
+  );
+  assert(deleteReferencedMemberRes.status === 409, '79. Deleting Member with exercise assignments/plans rejected with HTTP 409');
+  assert(
+    deleteReferencedMemberRes.data.message && (deleteReferencedMemberRes.data.message.includes('assigned') || deleteReferencedMemberRes.data.message.includes('history') || deleteReferencedMemberRes.data.message.includes('training')),
+    '80. Member conflict message recommends deactivation instead of deletion'
+  );
+
+  // Create clean unreferenced Trainer C and unreferenced Member C, then successfully delete them (HTTP 200)
+  const cleanTrainerRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/trainers', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { name: 'Clean Coach Gamma', email: `clean.coach.${timestamp}@ironforge.test`, password: 'Password@123' }
+  );
+  assert(cleanTrainerRes.status === 201, '81. Created clean Trainer C fixture');
+  const cleanTrainerId = cleanTrainerRes.data.data.trainer._id;
+
+  const deleteCleanTrainerRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/trainers/${cleanTrainerId}`, method: 'DELETE', headers: { Cookie: adminCookie } }
+  );
+  assert(deleteCleanTrainerRes.status === 200, '82. Deleting unreferenced Trainer C succeeds with HTTP 200');
+
+  const cleanMemberRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: '/api/members', method: 'POST', headers: { 'Content-Type': 'application/json', Cookie: adminCookie } },
+    { name: 'Clean Member Gamma', email: `clean.member.${timestamp}@ironforge.test`, password: 'Password@123' }
+  );
+  assert(cleanMemberRes.status === 201, '83. Created clean Member C fixture');
+  const cleanMemberId = cleanMemberRes.data.data.member._id;
+
+  const deleteCleanMemberRes = await request(
+    { hostname: '127.0.0.1', port: 5000, path: `/api/members/${cleanMemberId}`, method: 'DELETE', headers: { Cookie: adminCookie } }
+  );
+  assert(deleteCleanMemberRes.status === 200, '84. Deleting unreferenced Member C succeeds with HTTP 200');
+
   // --- SECTION 9: REGRESSION & CORE DASHBOARD HEALTH ---
   console.log('\n--- SECTION 9: Regression & System Health ---');
   const healthRes = await request({ hostname: '127.0.0.1', port: 5000, path: '/api/health', method: 'GET' });
-  assert(healthRes.status === 200 && healthRes.data.data.status === 'online', '63. /api/health returns 200 OK (online)');
+  assert(healthRes.status === 200 && healthRes.data.data.status === 'online', '85. /api/health returns 200 OK (online)');
 
   const adminStatsRes = await request({ hostname: '127.0.0.1', port: 5000, path: '/api/dashboard/stats', method: 'GET', headers: { Cookie: adminCookie } });
-  assert(adminStatsRes.status === 200 && (adminStatsRes.data.data.stats?.totalMembers >= 2 || adminStatsRes.data.data.totalMembers >= 2), '64. /api/dashboard/stats returns 200 with total members');
+  assert(adminStatsRes.status === 200 && (adminStatsRes.data.data.stats?.totalMembers >= 2 || adminStatsRes.data.data.totalMembers >= 2), '86. /api/dashboard/stats returns 200 with total members');
 
   console.log('\n==================================================');
   console.log(`🎉 ALL ${passedCount}/${totalCount} PHASE 6 TESTS PASSED SUCCESSFULLY!`);
