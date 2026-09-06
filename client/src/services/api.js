@@ -378,3 +378,159 @@ export const dashboardApi = {
     return data.data;
   },
 };
+
+/**
+ * Exercise Library API methods
+ */
+export const exercisesApi = {
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    if (params.category) query.append('category', params.category);
+    if (params.muscleGroup) query.append('muscleGroup', params.muscleGroup);
+    if (params.equipment) query.append('equipment', params.equipment);
+    if (params.difficulty) query.append('difficulty', params.difficulty);
+    if (params.status) query.append('status', params.status);
+
+    const response = await fetch(`${API_BASE_URL}/exercises?${query.toString()}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch exercises');
+    return data.data?.exercises || [];
+  },
+
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/exercises/${id}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch exercise');
+    return data.data?.exercise;
+  },
+
+  create: async (exerciseData) => {
+    const response = await fetch(`${API_BASE_URL}/exercises`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(exerciseData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to create exercise');
+    return data.data?.exercise;
+  },
+
+  update: async (id, exerciseData) => {
+    const response = await fetch(`${API_BASE_URL}/exercises/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(exerciseData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update exercise');
+    return data.data?.exercise;
+  },
+
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/exercises/${id}`, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete exercise');
+    return data;
+  },
+};
+
+/**
+ * Training Plans API methods
+ */
+export const trainingPlansApi = {
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.status) query.append('status', params.status);
+    if (params.goal) query.append('goal', params.goal);
+    if (params.memberId) query.append('memberId', params.memberId);
+    if (params.search) query.append('search', params.search);
+
+    const response = await fetch(`${API_BASE_URL}/training-plans?${query.toString()}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch training plans');
+    return data.data?.plans || [];
+  },
+
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/training-plans/${id}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch training plan');
+    return data.data?.plan;
+  },
+
+  getByMemberId: async (memberId) => {
+    const response = await fetch(`${API_BASE_URL}/training-plans/member/${memberId}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch member training plans');
+    return data.data;
+  },
+
+  create: async (planData) => {
+    const response = await fetch(`${API_BASE_URL}/training-plans`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(planData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to create training plan');
+    return data.data?.plan;
+  },
+
+  update: async (id, planData) => {
+    const response = await fetch(`${API_BASE_URL}/training-plans/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(planData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update training plan');
+    return data.data?.plan;
+  },
+
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/training-plans/${id}`, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete training plan');
+    return data;
+  },
+};

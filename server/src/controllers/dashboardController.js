@@ -2,6 +2,8 @@ const Member = require('../models/Member');
 const Trainer = require('../models/Trainer');
 const MembershipPlan = require('../models/MembershipPlan');
 const User = require('../models/User');
+const Exercise = require('../models/Exercise');
+const TrainingPlan = require('../models/TrainingPlan');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -20,6 +22,9 @@ const getAdminStats = async (req, res, next) => {
       activeTrainers,
       totalPlans,
       activeMemberships,
+      totalExercises,
+      totalTrainingPlans,
+      activeTrainingPlans,
     ] = await Promise.all([
       Member.countDocuments(),
       Member.countDocuments({ status: 'active' }),
@@ -29,6 +34,9 @@ const getAdminStats = async (req, res, next) => {
       Trainer.countDocuments({ status: 'active' }),
       MembershipPlan.countDocuments(),
       Member.countDocuments({ membershipPlan: { $ne: null }, status: 'active' }),
+      Exercise.countDocuments(),
+      TrainingPlan.countDocuments(),
+      TrainingPlan.countDocuments({ status: 'active' }),
     ]);
 
     // 5 Most recent members
@@ -72,6 +80,9 @@ const getAdminStats = async (req, res, next) => {
         activeTrainers,
         totalPlans,
         activeMemberships,
+        totalExercises,
+        totalTrainingPlans,
+        activeTrainingPlans,
       },
       recentMembers,
       recentTrainers,
@@ -107,6 +118,15 @@ const getTrainerDashboardData = async (req, res, next) => {
     const activeAssigned = assignedMembers.filter((m) => m.status === 'active').length;
     const expiredAssigned = assignedMembers.filter((m) => m.status === 'expired').length;
 
+    // Fetch trainer's training plans
+    const trainerPlans = await TrainingPlan.find({ trainer: trainer._id })
+      .populate({
+        path: 'member',
+        populate: { path: 'user', select: 'name' },
+      })
+      .populate('exercises.exercise')
+      .sort({ createdAt: -1 });
+
     return successResponse(res, 'Trainer dashboard data retrieved.', {
       trainer,
       assignedMembers,
@@ -114,7 +134,10 @@ const getTrainerDashboardData = async (req, res, next) => {
         totalAssigned,
         activeAssigned,
         expiredAssigned,
+        totalPlans: trainerPlans.length,
+        activePlans: trainerPlans.filter((p) => p.status === 'active').length,
       },
+      trainingPlans: trainerPlans,
     });
   } catch (error) {
     next(error);
@@ -153,6 +176,18 @@ const getMemberDashboardData = async (req, res, next) => {
       isExpiringSoon = daysRemaining > 0 && daysRemaining <= 7;
     }
 
+    // Fetch active training plan for this member
+    const activeTrainingPlan = await TrainingPlan.findOne({
+      member: member._id,
+      status: 'active',
+    })
+      .populate('trainer', 'specialization experience bio')
+      .populate({
+        path: 'trainer',
+        populate: { path: 'user', select: 'name email' },
+      })
+      .populate('exercises.exercise');
+
     return successResponse(res, 'Member dashboard data retrieved.', {
       member,
       membership: {
@@ -164,6 +199,7 @@ const getMemberDashboardData = async (req, res, next) => {
         isExpiringSoon,
       },
       trainer: member.assignedTrainer,
+      activeTrainingPlan,
     });
   } catch (error) {
     next(error);

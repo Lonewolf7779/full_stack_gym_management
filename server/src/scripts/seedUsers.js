@@ -4,6 +4,8 @@ const User = require('../models/User');
 const Trainer = require('../models/Trainer');
 const Member = require('../models/Member');
 const MembershipPlan = require('../models/MembershipPlan');
+const Exercise = require('../models/Exercise');
+const TrainingPlan = require('../models/TrainingPlan');
 const connectDB = require('../config/db');
 
 const seedDatabase = async () => {
@@ -272,6 +274,7 @@ const seedDatabase = async () => {
       },
     ];
 
+    const memberMap = {};
     for (const m of membersData) {
       let user = await User.findOne({ email: m.email });
       if (!user) {
@@ -322,14 +325,666 @@ const seedDatabase = async () => {
         member.notes = m.notes;
         await member.save();
       }
+      memberMap[m.name] = member;
+    }
+
+    // 4. Seed Exercise Library
+    console.log('[Seed] Seeding Exercise Library...');
+    const exercisesData = [
+      {
+        name: 'Barbell Bench Press',
+        category: 'Strength',
+        muscleGroup: 'Chest',
+        equipment: 'Barbell',
+        difficulty: 'Intermediate',
+        defaultSets: 4,
+        defaultReps: 8,
+        defaultDuration: 0,
+        defaultRestTime: 90,
+        description: 'Primary horizontal compound pressing movement targeting pectoralis major, anterior deltoids, and triceps.',
+        instructions: [
+          'Lie flat on bench with eyes directly under the racked bar.',
+          'Grip the bar slightly wider than shoulder-width, arch upper back, and pin shoulder blades together.',
+          'Unrack, take a deep breath, and lower bar smoothly to mid-chest touching lightly.',
+          'Drive feet firmly into the floor and press explosively back to starting position.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Incline Dumbbell Press',
+        category: 'Strength',
+        muscleGroup: 'Chest',
+        equipment: 'Dumbbell',
+        difficulty: 'Intermediate',
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultDuration: 0,
+        defaultRestTime: 75,
+        description: 'Upper chest development exercise performed on a 30-45 degree inclined bench.',
+        instructions: [
+          'Set adjustable bench to 30-45 degrees. Sit with dumbbells resting on thighs.',
+          'Kick dumbbells up to shoulder level as you lean back.',
+          'Press dumbbells upwards in an arc, converging near the top without banging.',
+          'Lower under control until upper arms are parallel to the torso.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Barbell Back Squat',
+        category: 'Strength',
+        muscleGroup: 'Legs',
+        equipment: 'Barbell',
+        difficulty: 'Advanced',
+        defaultSets: 4,
+        defaultReps: 6,
+        defaultDuration: 0,
+        defaultRestTime: 120,
+        description: 'The king of lower body compound lifts for quadriceps, hamstrings, glutes, and core stability.',
+        instructions: [
+          'Step under the bar resting it across upper trapezius or rear delts.',
+          'Unrack, take two controlled steps back, setting feet shoulder-width with slight toe flare.',
+          'Brace core tightly and initiate the descent by breaking hips and knees simultaneously.',
+          'Descend until hip crease is below top of knees (parallel or deeper).',
+          'Drive aggressively through midfoot to stand tall.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Romanian Deadlift (RDL)',
+        category: 'Strength',
+        muscleGroup: 'Legs',
+        equipment: 'Barbell',
+        difficulty: 'Intermediate',
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultDuration: 0,
+        defaultRestTime: 90,
+        description: 'Posterior chain builder emphasizing hamstrings, gluteus maximus, and spinal erectors with hip hinge.',
+        instructions: [
+          'Stand holding barbell at hip level with an overhand grip.',
+          'Keep a soft knee bend and push hips directly backwards as you hinge at the waist.',
+          'Lower bar close along the shins until a deep hamstring stretch is felt (just below knees).',
+          'Squeeze glutes and thrust hips forward to return to standing lock.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Bulgarian Split Squat',
+        category: 'Strength',
+        muscleGroup: 'Legs',
+        equipment: 'Dumbbell',
+        difficulty: 'Intermediate',
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultDuration: 0,
+        defaultRestTime: 60,
+        description: 'Unilateral quad and glute exercise that addresses muscular imbalances and hip stability.',
+        instructions: [
+          'Stand 2 feet in front of a flat bench. Place top of one foot rearward onto the bench.',
+          'Lower hips straight down until back knee hovers just above the floor.',
+          'Keep front knee tracking in line with toes and chest upright.',
+          'Push through front heel to return to top position.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Overhead Barbell Military Press',
+        category: 'Strength',
+        muscleGroup: 'Shoulders',
+        equipment: 'Barbell',
+        difficulty: 'Intermediate',
+        defaultSets: 4,
+        defaultReps: 8,
+        defaultDuration: 0,
+        defaultRestTime: 90,
+        description: 'Standing overhead press developing anterior and lateral deltoids, upper chest, and core bracing.',
+        instructions: [
+          'Hold barbell in front rack position across collarbone, elbows slightly forward of bar.',
+          'Tighten glutes and core, press bar vertically clearing head slightly backward.',
+          'Once bar passes forehead, push head back through and lock out overhead with shoulders active.',
+          'Lower slowly back to collarbone level.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Dumbbell Lateral Raise',
+        category: 'Strength',
+        muscleGroup: 'Shoulders',
+        equipment: 'Dumbbell',
+        difficulty: 'Beginner',
+        defaultSets: 4,
+        defaultReps: 12,
+        defaultDuration: 0,
+        defaultRestTime: 60,
+        description: 'Isolation exercise targeting lateral head of the deltoid for capped shoulder width.',
+        instructions: [
+          'Stand tall holding dumbbells at sides with a neutral grip and slight elbow bend.',
+          'Raise arms out to sides leading with elbows until parallel to the floor.',
+          'Hold at peak contraction for a split second, then lower under steady control.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Conventional Deadlift',
+        category: 'Olympic',
+        muscleGroup: 'Full Body',
+        equipment: 'Barbell',
+        difficulty: 'Advanced',
+        defaultSets: 3,
+        defaultReps: 5,
+        defaultDuration: 0,
+        defaultRestTime: 150,
+        description: 'Total body power movement engaging posterior chain, upper back, lats, and grip strength.',
+        instructions: [
+          'Stand with mid-foot under the barbell, feet hip-width apart.',
+          'Hinge down and grip bar just outside knees with double overhand or mixed grip.',
+          'Pull chest up, drop hips slightly, and wedge lats tight against torso.',
+          'Drive the floor away with legs and lock out hips and knees simultaneously.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Wide-Grip Lat Pulldown',
+        category: 'Strength',
+        muscleGroup: 'Back',
+        equipment: 'Cable',
+        difficulty: 'Beginner',
+        defaultSets: 3,
+        defaultReps: 12,
+        defaultDuration: 0,
+        defaultRestTime: 60,
+        description: 'Cable movement for latissimus dorsi width, upper back thickness, and biceps.',
+        instructions: [
+          'Sit at pulldown station with thighs secured firmly under roller pads.',
+          'Grip wide bar with an overhand grip wider than shoulders.',
+          'Lean torso back 10-15 degrees and pull bar down to upper chest, retracting shoulder blades.',
+          'Control the ascent allowing full stretch at the top.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Barbell Bent-Over Row',
+        category: 'Strength',
+        muscleGroup: 'Back',
+        equipment: 'Barbell',
+        difficulty: 'Intermediate',
+        defaultSets: 4,
+        defaultReps: 8,
+        defaultDuration: 0,
+        defaultRestTime: 90,
+        description: 'Heavy compound rowing lift building upper/mid back thickness, rhomboids, and rear delts.',
+        instructions: [
+          'Hinge at hips with back flat at a 45-degree angle, holding bar with shoulder-width grip.',
+          'Pull barbell into lower ribcage/navel, squeezing shoulder blades together aggressively.',
+          'Lower bar smoothly until arms are fully extended without rounding lower spine.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Bodyweight Pull-Ups',
+        category: 'Bodyweight',
+        muscleGroup: 'Back',
+        equipment: 'Bodyweight',
+        difficulty: 'Intermediate',
+        defaultSets: 3,
+        defaultReps: 8,
+        defaultDuration: 0,
+        defaultRestTime: 90,
+        description: 'Fundamental calisthenic upper body pulling exercise for lats and functional relative strength.',
+        instructions: [
+          'Grip pull-up bar with overhand grip slightly wider than shoulders.',
+          'Depress scapulae and pull chest up towards the bar until chin clears bar height.',
+          'Lower under steady control until arms reach dead-hang position.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Cable Face Pulls',
+        category: 'Strength',
+        muscleGroup: 'Shoulders',
+        equipment: 'Cable',
+        difficulty: 'Beginner',
+        defaultSets: 4,
+        defaultReps: 15,
+        defaultDuration: 0,
+        defaultRestTime: 60,
+        description: 'Postural and rotator cuff health movement for rear deltoids and external rotators.',
+        instructions: [
+          'Set cable pulley at eye level with rope attachment.',
+          'Grip rope with thumbs facing backwards and step back into a stable split stance.',
+          'Pull rope handles directly toward eyes/forehead, flaring elbows out and externally rotating shoulders.',
+          'Squeeze rear delts for 1 second, then control back.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Standing Barbell Bicep Curl',
+        category: 'Strength',
+        muscleGroup: 'Arms',
+        equipment: 'Barbell',
+        difficulty: 'Beginner',
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultDuration: 0,
+        defaultRestTime: 60,
+        description: 'Direct biceps brachii hypertrophy builder with supinated barbell loading.',
+        instructions: [
+          'Hold straight barbell or EZ bar with shoulder-width underhand grip.',
+          'Keep elbows pinned closely to sides of torso.',
+          'Curl bar upwards toward upper chest while squeezing biceps at peak contraction.',
+          'Lower bar slowly over 2-3 seconds for maximum eccentric tension.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'EZ Bar Skull Crushers',
+        category: 'Strength',
+        muscleGroup: 'Arms',
+        equipment: 'Barbell',
+        difficulty: 'Intermediate',
+        defaultSets: 3,
+        defaultReps: 10,
+        defaultDuration: 0,
+        defaultRestTime: 60,
+        description: 'Lying tricep extension targeting medial and long heads of the triceps brachii.',
+        instructions: [
+          'Lie back on flat bench holding EZ curl bar over chest with narrow grip.',
+          'Keeping upper arms perpendicular to the floor, bend elbows to lower bar toward forehead/crown.',
+          'Extend elbows forcefully to return bar to initial locked-out position.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Parallel Bar Dips',
+        category: 'Bodyweight',
+        muscleGroup: 'Arms',
+        equipment: 'Bodyweight',
+        difficulty: 'Intermediate',
+        defaultSets: 3,
+        defaultReps: 12,
+        defaultDuration: 0,
+        defaultRestTime: 75,
+        description: 'Bodyweight pressing powerhouse for lower chest and tricep development.',
+        instructions: [
+          'Mount parallel dip bars with arms fully locked and torso slightly tilted forward.',
+          'Lower body by bending elbows until upper arms are at least parallel to floor (90 degrees).',
+          'Press through palms to lockout top position.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Hanging Leg Raises',
+        category: 'Core',
+        muscleGroup: 'Core',
+        equipment: 'Bodyweight',
+        difficulty: 'Intermediate',
+        defaultSets: 3,
+        defaultReps: 12,
+        defaultDuration: 0,
+        defaultRestTime: 60,
+        description: 'Advanced core movement for lower rectus abdominis, hip flexors, and grip endurance.',
+        instructions: [
+          'Hang from a pull-up bar with overhand grip and legs straight.',
+          'Engage core and raise legs straight in front until hips reach 90 degrees or touch bar.',
+          'Avoid swinging momentum and lower legs with strict control.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Isometric Plank Hold',
+        category: 'Core',
+        muscleGroup: 'Core',
+        equipment: 'None',
+        difficulty: 'Beginner',
+        defaultSets: 3,
+        defaultReps: 1,
+        defaultDuration: 60, // 60 seconds
+        defaultRestTime: 45,
+        description: 'Anti-extension core isometric exercise strengthening deep transverse abdominis and pelvic stability.',
+        instructions: [
+          'Rest on forearms and toes with elbows directly below shoulders.',
+          'Maintain a straight rigid line from heels to crown of head.',
+          'Tuck pelvis under, squeeze glutes, and brace core as if bracing for a punch.',
+          'Hold position for specified target duration without sagging hips.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Kettlebell Russian Swings',
+        category: 'Cardio',
+        muscleGroup: 'Full Body',
+        equipment: 'Kettlebell',
+        difficulty: 'Intermediate',
+        defaultSets: 4,
+        defaultReps: 15,
+        defaultDuration: 0,
+        defaultRestTime: 45,
+        description: 'Explosive posterior chain conditioning exercise for athletic hip drive and metabolic burn.',
+        instructions: [
+          'Stand with feet shoulder-width, kettlebell one foot in front on floor.',
+          'Hinge down to grip kettlebell handle, hike bell between legs like a football snap.',
+          'Snap hips forward explosively, driving kettlebell to chest level via momentum.',
+          'Guide bell back through legs and repeat in continuous rhythmic cadence.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Concept2 Rowing 500m Intervals',
+        category: 'Cardio',
+        muscleGroup: 'Full Body',
+        equipment: 'Machine',
+        difficulty: 'Intermediate',
+        defaultSets: 4,
+        defaultReps: 1,
+        defaultDuration: 120, // 120s / 2 min target
+        defaultRestTime: 90,
+        description: 'High-intensity full-body aerobic conditioning building VO2 max and anaerobic threshold.',
+        instructions: [
+          'Strap feet securely into footplates and set damper resistance to 5-6.',
+          'Drive hard through legs first, lean back 10 degrees, then pull handle to lower sternum.',
+          'Recover arms first, pivot torso forward, then slide knees back to catch position.',
+          'Maintain steady stroke rate of 28-32 strokes per minute.',
+        ],
+        status: 'active',
+      },
+      {
+        name: 'Treadmill Incline Sprint HIIT',
+        category: 'Cardio',
+        muscleGroup: 'Legs',
+        equipment: 'Machine',
+        difficulty: 'Advanced',
+        defaultSets: 6,
+        defaultReps: 1,
+        defaultDuration: 45, // 45s sprint
+        defaultRestTime: 45,
+        description: 'Metabolic sprint intervals on 8-10% grade incline for maximum caloric expenditure and power.',
+        instructions: [
+          'Set treadmill to 8% incline at 10-12 mph.',
+          'Straddle belt during rest, then mount belt smoothly into full sprint for 45 seconds.',
+          'Keep posture upright and pump arms vigorously.',
+          'Safely step off onto side rails for 45 seconds rest.',
+        ],
+        status: 'active',
+      },
+    ];
+
+    const exerciseMap = {};
+    for (const ex of exercisesData) {
+      let exercise = await Exercise.findOne({ name: ex.name });
+      if (!exercise) {
+        exercise = await Exercise.create(ex);
+        console.log(`[Seed] Created exercise: ${ex.name} (${ex.category} / ${ex.muscleGroup})`);
+      } else {
+        exercise.category = ex.category;
+        exercise.muscleGroup = ex.muscleGroup;
+        exercise.equipment = ex.equipment;
+        exercise.difficulty = ex.difficulty;
+        exercise.defaultSets = ex.defaultSets;
+        exercise.defaultReps = ex.defaultReps;
+        exercise.defaultDuration = ex.defaultDuration;
+        exercise.defaultRestTime = ex.defaultRestTime;
+        exercise.description = ex.description;
+        exercise.instructions = ex.instructions;
+        exercise.status = ex.status;
+        await exercise.save();
+      }
+      exerciseMap[ex.name] = exercise;
+    }
+
+    // 5. Seed Training Plans
+    console.log('[Seed] Seeding Training Plans...');
+    const plansToSeed = [
+      {
+        memberName: 'Rahul Patel',
+        trainerName: 'Marcus Vance',
+        planName: 'Hypertrophy Upper/Lower Foundation',
+        goal: 'Hypertrophy',
+        status: 'active',
+        startDate: new Date(now.getFullYear(), now.getMonth(), 1),
+        endDate: new Date(now.getFullYear(), now.getMonth() + 2, 1),
+        description: 'Comprehensive 8-week progressive overload split designed to maximize lean muscle mass and compound strength.',
+        notes: 'Focus on progressive overload: increase barbell load by 2.5kg whenever top rep target is met with clean form. Maintain 300 surplus calories.',
+        exercises: [
+          {
+            exerciseName: 'Barbell Back Squat',
+            sets: 4,
+            reps: 6,
+            duration: 0,
+            restTime: 120,
+            targetWeight: 100,
+            instructions: 'Hit parallel depth every rep. Keep core tightly braced.',
+          },
+          {
+            exerciseName: 'Barbell Bench Press',
+            sets: 4,
+            reps: 8,
+            duration: 0,
+            restTime: 90,
+            targetWeight: 80,
+            instructions: 'Touch mid-chest, pause for 0.5s, then drive up explosively.',
+          },
+          {
+            exerciseName: 'Barbell Bent-Over Row',
+            sets: 4,
+            reps: 8,
+            duration: 0,
+            restTime: 90,
+            targetWeight: 70,
+            instructions: 'Pull to belly button, squeeze lats and rhomboids at top.',
+          },
+          {
+            exerciseName: 'Overhead Barbell Military Press',
+            sets: 3,
+            reps: 8,
+            duration: 0,
+            restTime: 90,
+            targetWeight: 50,
+            instructions: 'Full lockout overhead with active shoulders.',
+          },
+          {
+            exerciseName: 'Standing Barbell Bicep Curl',
+            sets: 3,
+            reps: 10,
+            duration: 0,
+            restTime: 60,
+            targetWeight: 30,
+            instructions: 'Strict form, 3-second negative descent on each repetition.',
+          },
+          {
+            exerciseName: 'Isometric Plank Hold',
+            sets: 3,
+            reps: 1,
+            duration: 60,
+            restTime: 45,
+            targetWeight: 0,
+            instructions: 'Squeeze glutes and brace core tightly throughout the minute.',
+          },
+        ],
+      },
+      {
+        memberName: 'Sarah Jenkins',
+        trainerName: 'Elena Rostova',
+        planName: 'Metabolic Conditioning & Functional Power',
+        goal: 'Fat Loss',
+        status: 'active',
+        startDate: new Date(now.getFullYear(), now.getMonth() - 1, 15),
+        endDate: new Date(now.getFullYear(), now.getMonth() + 2, 15),
+        description: 'High-density functional athletic conditioning program targeting cardiovascular endurance, agility, and stamina.',
+        notes: 'Rest strictly within programmed rest windows. Hydrate well before intervals.',
+        exercises: [
+          {
+            exerciseName: 'Kettlebell Russian Swings',
+            sets: 4,
+            reps: 15,
+            duration: 0,
+            restTime: 45,
+            targetWeight: 20,
+            instructions: 'Explosive hip drive, maintain neutral spine throughout.',
+          },
+          {
+            exerciseName: 'Concept2 Rowing 500m Intervals',
+            sets: 4,
+            reps: 1,
+            duration: 115,
+            restTime: 90,
+            targetWeight: 0,
+            instructions: 'Target sub-1:55/500m split pace on all 4 rounds.',
+          },
+          {
+            exerciseName: 'Bodyweight Pull-Ups',
+            sets: 3,
+            reps: 8,
+            duration: 0,
+            restTime: 75,
+            targetWeight: 0,
+            instructions: 'Full chin over bar, controlled 2-second descent.',
+          },
+          {
+            exerciseName: 'Treadmill Incline Sprint HIIT',
+            sets: 5,
+            reps: 1,
+            duration: 45,
+            restTime: 45,
+            targetWeight: 0,
+            instructions: '8% incline at 11.5 mph. Give 95% maximum effort.',
+          },
+          {
+            exerciseName: 'Hanging Leg Raises',
+            sets: 3,
+            reps: 12,
+            duration: 0,
+            restTime: 60,
+            targetWeight: 0,
+            instructions: 'No swinging momentum. Control legs down.',
+          },
+        ],
+      },
+      {
+        memberName: 'Priya Sharma',
+        trainerName: 'Marcus Vance',
+        planName: 'Total Body Hypertrophy & Sculpt',
+        goal: 'Strength',
+        status: 'active',
+        startDate: new Date(now.getFullYear(), now.getMonth() - 2, 1),
+        endDate: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+        description: 'Targeted full-body hypertrophy routine focusing on posterior chain, shoulders, and back definition.',
+        notes: 'Great progress on Romanian Deadlifts! Focus on slowing down the eccentric phase on Bulgarian Split Squats.',
+        exercises: [
+          {
+            exerciseName: 'Romanian Deadlift (RDL)',
+            sets: 4,
+            reps: 10,
+            duration: 0,
+            restTime: 90,
+            targetWeight: 60,
+            instructions: 'Hinge deeply at hips, keep bar skimming along shins.',
+          },
+          {
+            exerciseName: 'Bulgarian Split Squat',
+            sets: 3,
+            reps: 10,
+            duration: 0,
+            restTime: 60,
+            targetWeight: 16,
+            instructions: '16kg DB in each hand. Keep front knee tracked forward.',
+          },
+          {
+            exerciseName: 'Wide-Grip Lat Pulldown',
+            sets: 3,
+            reps: 12,
+            duration: 0,
+            restTime: 60,
+            targetWeight: 45,
+            instructions: 'Drive elbows into back pockets, pause at collarbone.',
+          },
+          {
+            exerciseName: 'Dumbbell Lateral Raise',
+            sets: 4,
+            reps: 12,
+            duration: 0,
+            restTime: 60,
+            targetWeight: 8,
+            instructions: 'Slow controlled reps, lead with elbows.',
+          },
+          {
+            exerciseName: 'Cable Face Pulls',
+            sets: 4,
+            reps: 15,
+            duration: 0,
+            restTime: 60,
+            targetWeight: 25,
+            instructions: 'External rotation at peak, hold for 1 full second.',
+          },
+        ],
+      },
+    ];
+
+    for (const seedPlan of plansToSeed) {
+      const member = memberMap[seedPlan.memberName];
+      const trainer = trainerMap[seedPlan.trainerName];
+
+      if (!member || !trainer) {
+        console.warn(`[Seed] Skipping plan ${seedPlan.planName}: missing member or trainer`);
+        continue;
+      }
+
+      const formattedExercises = seedPlan.exercises
+        .map((exItem, idx) => {
+          const exDoc = exerciseMap[exItem.exerciseName];
+          if (!exDoc) return null;
+          return {
+            exercise: exDoc._id,
+            sets: exItem.sets,
+            reps: exItem.reps,
+            duration: exItem.duration,
+            restTime: exItem.restTime,
+            targetWeight: exItem.targetWeight,
+            instructions: exItem.instructions,
+            order: idx + 1,
+          };
+        })
+        .filter(Boolean);
+
+      let existingPlan = await TrainingPlan.findOne({
+        member: member._id,
+        planName: seedPlan.planName,
+      });
+
+      if (!existingPlan) {
+        existingPlan = await TrainingPlan.create({
+          member: member._id,
+          trainer: trainer._id,
+          planName: seedPlan.planName,
+          goal: seedPlan.goal,
+          status: seedPlan.status,
+          startDate: seedPlan.startDate,
+          endDate: seedPlan.endDate,
+          description: seedPlan.description,
+          notes: seedPlan.notes,
+          exercises: formattedExercises,
+        });
+        console.log(`[Seed] Created Training Plan: "${seedPlan.planName}" for ${seedPlan.memberName} (Coach: ${seedPlan.trainerName})`);
+      } else {
+        existingPlan.trainer = trainer._id;
+        existingPlan.goal = seedPlan.goal;
+        existingPlan.status = seedPlan.status;
+        existingPlan.startDate = seedPlan.startDate;
+        existingPlan.endDate = seedPlan.endDate;
+        existingPlan.description = seedPlan.description;
+        existingPlan.notes = seedPlan.notes;
+        existingPlan.exercises = formattedExercises;
+        await existingPlan.save();
+      }
     }
 
     console.log('====================================================');
-    console.log('🎉 Phase 4 Core Data Seeded Successfully:');
+    console.log('🎉 Phase 5 Training & Core Data Seeded Successfully:');
     console.log('----------------------------------------------------');
     console.log('📦 Membership Plans: 3 plans (Basic, Standard, Premium Elite)');
     console.log('🏋️ Trainers:         3 trainers (Marcus Vance, Elena Rostova, Darius Thorne)');
     console.log('🏃 Members:          6 members with active/inactive/expired statuses');
+    console.log('📚 Exercise Catalog: 20 comprehensive exercises across all muscle groups');
+    console.log('📋 Training Plans:   3 active workout routines assigned to members');
     console.log('👤 Demo Admin:       admin@ironforge.test   | Pass: Admin@123');
     console.log('🏋️ Demo Trainer:     trainer@ironforge.test | Pass: Trainer@123');
     console.log('🏃 Demo Member:      member@ironforge.test  | Pass: Member@123');
