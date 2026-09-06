@@ -29,6 +29,11 @@ import {
   ChevronRight,
   Flame,
   Target,
+  Receipt,
+  DollarSign,
+  Wallet,
+  Zap,
+  Check,
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
@@ -44,6 +49,7 @@ import {
   trainerExerciseAssignmentsApi,
   usersApi,
   attendanceApi,
+  paymentsApi,
 } from '../../services/api';
 import './AdminDashboard.css';
 
@@ -51,7 +57,7 @@ export default function AdminDashboard() {
   const { user } = useAuth();
 
   // Active Tab
-  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'members' | 'trainers' | 'exercises' | 'plans' | 'memberships' | 'attendance'
+  const [activeTab, setActiveTab] = useState('overview'); // 'overview' | 'members' | 'trainers' | 'exercises' | 'plans' | 'memberships' | 'attendance' | 'payments'
 
   // Data States
   const [statsData, setStatsData] = useState(null);
@@ -75,6 +81,51 @@ export default function AdminDashboard() {
   const [attendanceTrainerFilter, setAttendanceTrainerFilter] = useState('');
   const [attendanceMemberFilter, setAttendanceMemberFilter] = useState('');
   const [attendanceLoading, setAttendanceLoading] = useState(false);
+
+  // Payments & Billing States
+  const [paymentsList, setPaymentsList] = useState([]);
+  const [paymentStats, setPaymentStats] = useState({
+    totalRevenue: 0,
+    todayRevenue: 0,
+    thisMonthRevenue: 0,
+    totalTransactions: 0,
+    paidTransactions: 0,
+    pendingTransactions: 0,
+    failedTransactions: 0,
+    refundedTransactions: 0,
+    methodBreakdown: [],
+  });
+  const [paymentSearch, setPaymentSearch] = useState('');
+  const [paymentStatusFilter, setPaymentStatusFilter] = useState('');
+  const [paymentMethodFilter, setPaymentMethodFilter] = useState('');
+  const [paymentStartDateFilter, setPaymentStartDateFilter] = useState('');
+  const [paymentEndDateFilter, setPaymentEndDateFilter] = useState('');
+  const [paymentLoading, setPaymentLoading] = useState(false);
+
+  // Manual Payment Form & Modal States
+  const [manualPaymentModalOpen, setManualPaymentModalOpen] = useState(false);
+  const [manualPaymentForm, setManualPaymentForm] = useState({
+    memberId: '',
+    planId: '',
+    amount: '',
+    paymentMethod: 'cash',
+    paymentDate: '',
+    notes: '',
+    purpose: 'membership',
+  });
+  const [manualPaymentModalError, setManualPaymentModalError] = useState('');
+  const [manualPaymentSubmitting, setManualPaymentSubmitting] = useState(false);
+
+  // Admin Receipt Modal States
+  const [adminReceiptModalOpen, setAdminReceiptModalOpen] = useState(false);
+  const [selectedAdminReceipt, setSelectedAdminReceipt] = useState(null);
+
+  // Edit Payment Notes Modal States
+  const [editPaymentNotesModalOpen, setEditPaymentNotesModalOpen] = useState(false);
+  const [editingPayment, setEditingPayment] = useState(null);
+  const [paymentNotesForm, setPaymentNotesForm] = useState('');
+  const [editPaymentNotesError, setEditPaymentNotesError] = useState('');
+  const [paymentNotesSubmitting, setPaymentNotesSubmitting] = useState(false);
 
   // Attendance Form & Modal States
   const [createAttendanceModalOpen, setCreateAttendanceModalOpen] = useState(false);
@@ -284,14 +335,137 @@ export default function AdminDashboard() {
     attendanceMemberFilter,
   ]);
 
+  // Load Payments Records and Stats
+  const loadAdminPayments = useCallback(async () => {
+    try {
+      setPaymentLoading(true);
+      const params = {};
+      if (paymentSearch) params.search = paymentSearch;
+      if (paymentStatusFilter) params.status = paymentStatusFilter;
+      if (paymentMethodFilter) params.paymentMethod = paymentMethodFilter;
+      if (paymentStartDateFilter) params.startDate = paymentStartDateFilter;
+      if (paymentEndDateFilter) params.endDate = paymentEndDateFilter;
+
+      const [paymentsRes, statsRes] = await Promise.all([
+        paymentsApi.getAll(params),
+        paymentsApi.getStats(),
+      ]);
+
+      setPaymentsList(paymentsRes?.payments || []);
+      if (statsRes) setPaymentStats(statsRes);
+    } catch (err) {
+      console.warn('[Admin Payments] Error:', err.message);
+    } finally {
+      setPaymentLoading(false);
+    }
+  }, [
+    paymentSearch,
+    paymentStatusFilter,
+    paymentMethodFilter,
+    paymentStartDateFilter,
+    paymentEndDateFilter,
+  ]);
+
   useEffect(() => {
     loadDashboardData();
     loadAdminAttendance();
-  }, [loadDashboardData, loadAdminAttendance]);
+    loadAdminPayments();
+  }, [loadDashboardData, loadAdminAttendance, loadAdminPayments]);
 
   const flashMessage = (msg) => {
     setSuccessMessage(msg);
     setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  // --- Payment Action Handlers ---
+  const handleOpenManualPayment = () => {
+    const defaultMember = members[0]?._id || '';
+    const defaultPlan = plans[0] || null;
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    setManualPaymentForm({
+      memberId: defaultMember,
+      planId: defaultPlan?._id || '',
+      amount: defaultPlan?.price ? String(defaultPlan.price) : '',
+      paymentMethod: 'cash',
+      paymentDate: todayStr,
+      notes: '',
+      purpose: 'membership',
+    });
+    setManualPaymentModalError('');
+    setManualPaymentModalOpen(true);
+  };
+
+  const handleManualPlanChange = (selectedPlanId) => {
+    const planObj = plans.find((p) => p._id === selectedPlanId);
+    setManualPaymentForm((prev) => ({
+      ...prev,
+      planId: selectedPlanId,
+      amount: planObj?.price !== undefined ? String(planObj.price) : prev.amount,
+    }));
+  };
+
+  const handleSubmitManualPayment = async (e) => {
+    e.preventDefault();
+    if (!manualPaymentForm.memberId) {
+      setManualPaymentModalError('Please select a valid member.');
+      return;
+    }
+    const parsedAmount = Number(manualPaymentForm.amount);
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setManualPaymentModalError('Payment amount must be greater than 0.');
+      return;
+    }
+
+    try {
+      setManualPaymentSubmitting(true);
+      setManualPaymentModalError('');
+
+      await paymentsApi.recordManual({
+        memberId: manualPaymentForm.memberId,
+        planId: manualPaymentForm.planId || undefined,
+        amount: parsedAmount,
+        paymentMethod: manualPaymentForm.paymentMethod,
+        paymentDate: manualPaymentForm.paymentDate || new Date().toISOString(),
+        notes: manualPaymentForm.notes,
+        purpose: manualPaymentForm.purpose,
+      });
+
+      flashMessage(`Manual payment of ₹${parsedAmount} recorded and membership fulfilled!`);
+      setManualPaymentModalOpen(false);
+      await Promise.all([loadAdminPayments(), loadDashboardData()]);
+    } catch (err) {
+      setManualPaymentModalError(err.message || 'Failed to record manual payment.');
+    } finally {
+      setManualPaymentSubmitting(false);
+    }
+  };
+
+  const handleOpenEditPaymentNotes = (pay) => {
+    setEditingPayment(pay);
+    setPaymentNotesForm(pay.notes || '');
+    setEditPaymentNotesError('');
+    setEditPaymentNotesModalOpen(true);
+  };
+
+  const handleSubmitEditPaymentNotes = async (e) => {
+    e.preventDefault();
+    if (!editingPayment) return;
+
+    try {
+      setPaymentNotesSubmitting(true);
+      setEditPaymentNotesError('');
+
+      await paymentsApi.updateNotes(editingPayment._id, paymentNotesForm);
+      flashMessage('Payment administrative notes updated successfully.');
+      setEditPaymentNotesModalOpen(false);
+      setEditingPayment(null);
+      await loadAdminPayments();
+    } catch (err) {
+      setEditPaymentNotesError(err.message || 'Failed to update payment notes.');
+    } finally {
+      setPaymentNotesSubmitting(false);
+    }
   };
 
   // --- Attendance Action Handlers ---
@@ -1088,6 +1262,13 @@ export default function AdminDashboard() {
           >
             <Clock size={16} />
             <span>Attendance ({attendanceRecords.length})</span>
+          </button>
+          <button
+            className={`dashboard-tab-btn ${activeTab === 'payments' ? 'active' : ''}`}
+            onClick={() => setActiveTab('payments')}
+          >
+            <Wallet size={16} />
+            <span>Payments & Billing ({paymentStats.totalTransactions})</span>
           </button>
         </div>
 
@@ -2188,6 +2369,281 @@ export default function AdminDashboard() {
                   <span className="empty-state-title">No Attendance Records Found</span>
                   <p style={{ fontSize: '0.88rem' }}>
                     No member check-ins match your search criteria. Click &ldquo;Log Attendance&rdquo; to manually record a visit.
+                  </p>
+                </div>
+              )}
+            </Card>
+          </div>
+        )}
+
+        {/* TAB 8: PAYMENTS & BILLING */}
+        {activeTab === 'payments' && (
+          <div className="payments-tab-content">
+            {/* Header / Actions */}
+            <div className="section-header-row" style={{ marginBottom: '1.25rem' }}>
+              <div>
+                <h2>Payments & Membership Billing</h2>
+                <p>Track online Razorpay transactions, record offline payments, and audit receipts.</p>
+              </div>
+              <Button
+                variant="primary"
+                size="md"
+                icon={Plus}
+                onClick={handleOpenManualPayment}
+              >
+                Record Manual Payment
+              </Button>
+            </div>
+
+            {/* 5 Real Financial Statistics Cards */}
+            <div className="attendance-stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: '1.5rem' }}>
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Total Gross Revenue</span>
+                <span className="attendance-stat-value" style={{ color: '#34d399' }}>
+                  ₹{paymentStats.totalRevenue}
+                </span>
+                <span className="attendance-stat-sub">Lifetime completed payments</span>
+              </div>
+
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">This Month Revenue</span>
+                <span className="attendance-stat-value" style={{ color: '#00e5ff' }}>
+                  ₹{paymentStats.thisMonthRevenue}
+                </span>
+                <span className="attendance-stat-sub">Current calendar month</span>
+              </div>
+
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Today's Revenue</span>
+                <span className="attendance-stat-value" style={{ color: 'var(--primary)' }}>
+                  ₹{paymentStats.todayRevenue}
+                </span>
+                <span className="attendance-stat-sub">Collected today</span>
+              </div>
+
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Verified Paid</span>
+                <span className="attendance-stat-value" style={{ color: '#a78bfa' }}>
+                  {paymentStats.paidTransactions}
+                </span>
+                <span className="attendance-stat-sub">Successful transactions</span>
+              </div>
+
+              <div className="attendance-stat-box">
+                <span className="attendance-stat-label">Pending / Issues</span>
+                <span className="attendance-stat-value" style={{ color: paymentStats.failedTransactions > 0 ? '#f87171' : 'var(--text-muted)' }}>
+                  {paymentStats.pendingTransactions + paymentStats.failedTransactions}
+                </span>
+                <span className="attendance-stat-sub">
+                  {paymentStats.pendingTransactions} pending &bull; {paymentStats.failedTransactions} failed
+                </span>
+              </div>
+            </div>
+
+            {/* Main Payments Card */}
+            <Card className="glass-panel" padding="normal">
+              {/* Filters Bar */}
+              <div className="search-filter-group" style={{ margin: '0 0 1.5rem', flexWrap: 'wrap', gap: '0.65rem' }}>
+                <div className="search-input-wrap" style={{ flex: '1 1 240px' }}>
+                  <Search size={16} className="search-icon" />
+                  <input
+                    type="text"
+                    className="search-input"
+                    placeholder="Search by receipt #, member name, email or gateway ID..."
+                    value={paymentSearch}
+                    onChange={(e) => setPaymentSearch(e.target.value)}
+                  />
+                </div>
+
+                <select
+                  className="filter-select"
+                  value={paymentStatusFilter}
+                  onChange={(e) => setPaymentStatusFilter(e.target.value)}
+                >
+                  <option value="">All Statuses</option>
+                  <option value="paid">Paid & Verified</option>
+                  <option value="pending">Pending</option>
+                  <option value="failed">Failed</option>
+                </select>
+
+                <select
+                  className="filter-select"
+                  value={paymentMethodFilter}
+                  onChange={(e) => setPaymentMethodFilter(e.target.value)}
+                >
+                  <option value="">All Payment Methods</option>
+                  <option value="razorpay">Razorpay Online</option>
+                  <option value="cash">Cash (Offline)</option>
+                  <option value="upi">UPI (Offline / Direct)</option>
+                  <option value="card">Card (POS / Terminal)</option>
+                  <option value="bank_transfer">Bank Transfer</option>
+                  <option value="other">Other</option>
+                </select>
+
+                <input
+                  type="date"
+                  className="filter-select"
+                  style={{ color: paymentStartDateFilter ? '#ffffff' : 'var(--text-muted)' }}
+                  value={paymentStartDateFilter}
+                  onChange={(e) => setPaymentStartDateFilter(e.target.value)}
+                  title="Filter from Start Date"
+                />
+
+                <input
+                  type="date"
+                  className="filter-select"
+                  style={{ color: paymentEndDateFilter ? '#ffffff' : 'var(--text-muted)' }}
+                  value={paymentEndDateFilter}
+                  onChange={(e) => setPaymentEndDateFilter(e.target.value)}
+                  title="Filter to End Date"
+                />
+
+                {(paymentSearch || paymentStatusFilter || paymentMethodFilter || paymentStartDateFilter || paymentEndDateFilter) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setPaymentSearch('');
+                      setPaymentStatusFilter('');
+                      setPaymentMethodFilter('');
+                      setPaymentStartDateFilter('');
+                      setPaymentEndDateFilter('');
+                    }}
+                  >
+                    Clear Filters
+                  </Button>
+                )}
+              </div>
+
+              {/* Payments Table */}
+              {paymentLoading ? (
+                <div style={{ textAlign: 'center', padding: '3rem 0', color: 'var(--text-muted)' }}>
+                  Loading payment and billing records...
+                </div>
+              ) : paymentsList && paymentsList.length > 0 ? (
+                <div className="table-responsive">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Receipt #</th>
+                        <th>Member</th>
+                        <th>Plan / Purpose</th>
+                        <th>Amount</th>
+                        <th>Method</th>
+                        <th>Status</th>
+                        <th>Payment Date</th>
+                        <th>Recorded By</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paymentsList.map((pay) => (
+                        <tr key={pay._id}>
+                          <td>
+                            <span style={{ fontFamily: 'monospace', fontWeight: 700, color: '#ffffff' }}>
+                              {pay.receiptNumber}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              <strong style={{ color: '#ffffff' }}>
+                                {pay.member?.user?.name || 'Athlete'}
+                              </strong>
+                              <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+                                {pay.member?.user?.email}
+                              </span>
+                            </div>
+                          </td>
+                          <td>
+                            <span style={{ fontWeight: 600 }}>
+                              {pay.membershipPlan?.name || (pay.purpose === 'renewal' ? 'Renewal' : 'Membership')}
+                            </span>
+                            {pay.membershipPlan?.duration && (
+                              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'block' }}>
+                                {pay.membershipPlan.duration} mo duration
+                              </span>
+                            )}
+                          </td>
+                          <td>
+                            <span style={{ fontFamily: 'var(--font-heading)', fontWeight: 800, fontSize: '1.05rem', color: '#ffffff' }}>
+                              ₹{pay.amount}
+                            </span>
+                          </td>
+                          <td>
+                            <span
+                              style={{
+                                textTransform: 'uppercase',
+                                fontSize: '0.75rem',
+                                fontWeight: 800,
+                                letterSpacing: '0.05em',
+                                color:
+                                  pay.paymentMethod === 'razorpay'
+                                    ? '#00e5ff'
+                                    : pay.paymentMethod === 'cash'
+                                    ? '#34d399'
+                                    : 'var(--primary)',
+                              }}
+                            >
+                              {pay.paymentMethod === 'razorpay' ? 'Razorpay' : pay.paymentMethod}
+                            </span>
+                          </td>
+                          <td>
+                            {pay.status === 'paid' ? (
+                              <Badge variant="primary" size="sm">Paid</Badge>
+                            ) : pay.status === 'pending' ? (
+                              <Badge variant="warning" size="sm">Pending</Badge>
+                            ) : (
+                              <Badge variant="danger" size="sm">Failed</Badge>
+                            )}
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.88rem', color: 'var(--text-secondary)' }}>
+                              {pay.paymentDate
+                                ? new Date(pay.paymentDate).toLocaleDateString()
+                                : new Date(pay.createdAt).toLocaleDateString()}
+                            </span>
+                          </td>
+                          <td>
+                            <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                              {pay.recordedBy?.name || (pay.paymentMethod === 'razorpay' ? 'Online Gateway' : 'System')}
+                            </span>
+                          </td>
+                          <td>
+                            <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                              <button
+                                type="button"
+                                className="btn-icon-action"
+                                title="View Payment Receipt"
+                                onClick={() => {
+                                  setSelectedAdminReceipt(pay);
+                                  setAdminReceiptModalOpen(true);
+                                }}
+                              >
+                                <Receipt size={15} />
+                              </button>
+                              <button
+                                type="button"
+                                className="btn-icon-action"
+                                title="Edit Administrative Notes"
+                                onClick={() => handleOpenEditPaymentNotes(pay)}
+                              >
+                                <Edit2 size={15} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="empty-state-box">
+                  <div className="empty-state-icon">
+                    <CreditCard size={28} />
+                  </div>
+                  <span className="empty-state-title">No Payment Records Found</span>
+                  <p style={{ fontSize: '0.88rem' }}>
+                    No transactions match your current search/filter settings. Click &ldquo;Record Manual Payment&rdquo; to log an offline transaction.
                   </p>
                 </div>
               )}
@@ -3646,6 +4102,307 @@ export default function AdminDashboard() {
               </div>
             </div>
           </div>
+        </Modal>
+
+        {/* MODAL 12: RECORD MANUAL OFFLINE PAYMENT */}
+        <Modal
+          isOpen={manualPaymentModalOpen}
+          onClose={() => setManualPaymentModalOpen(false)}
+          title="Record Manual / Offline Payment"
+          subtitle="Log cash, direct UPI, or terminal card payments and immediately fulfill member subscription."
+          size="lg"
+        >
+          <form onSubmit={handleSubmitManualPayment}>
+            {manualPaymentModalError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{manualPaymentModalError}</span>
+              </div>
+            )}
+
+            <div className="modal-form-grid">
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Select Member *</label>
+                <select
+                  className="field-select"
+                  required
+                  value={manualPaymentForm.memberId}
+                  onChange={(e) => setManualPaymentForm({ ...manualPaymentForm, memberId: e.target.value })}
+                >
+                  <option value="">-- Choose Member --</option>
+                  {members.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.user?.name} ({m.user?.email}) - Current: {m.membershipPlan?.name || 'No Plan'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Membership Package Tier</label>
+                <select
+                  className="field-select"
+                  value={manualPaymentForm.planId}
+                  onChange={(e) => handleManualPlanChange(e.target.value)}
+                >
+                  <option value="">-- No Package / Custom Item --</option>
+                  {plans.map((p) => (
+                    <option key={p._id} value={p._id}>
+                      {p.name} (₹{p.price} / {p.duration} mo)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Payment Amount (INR ₹) *</label>
+                <input
+                  type="number"
+                  required
+                  min="0.01"
+                  step="0.01"
+                  className="field-input"
+                  placeholder="e.g. 29.00"
+                  value={manualPaymentForm.amount}
+                  onChange={(e) => setManualPaymentForm({ ...manualPaymentForm, amount: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Offline Payment Method *</label>
+                <select
+                  className="field-select"
+                  value={manualPaymentForm.paymentMethod}
+                  onChange={(e) => setManualPaymentForm({ ...manualPaymentForm, paymentMethod: e.target.value })}
+                >
+                  <option value="cash">Cash (Front Desk)</option>
+                  <option value="upi">UPI (Direct QR / PhonePe / GPay)</option>
+                  <option value="card">Card (POS Swiped)</option>
+                  <option value="bank_transfer">Bank Wire / IMPS</option>
+                  <option value="other">Other Manual Settlement</option>
+                </select>
+              </div>
+
+              <div className="form-field">
+                <label className="field-label">Payment Date *</label>
+                <input
+                  type="date"
+                  required
+                  className="field-input"
+                  value={manualPaymentForm.paymentDate}
+                  onChange={(e) => setManualPaymentForm({ ...manualPaymentForm, paymentDate: e.target.value })}
+                />
+              </div>
+
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Payment Purpose</label>
+                <select
+                  className="field-select"
+                  value={manualPaymentForm.purpose}
+                  onChange={(e) => setManualPaymentForm({ ...manualPaymentForm, purpose: e.target.value })}
+                >
+                  <option value="membership">New Membership Subscription</option>
+                  <option value="renewal">Membership Renewal / Extension</option>
+                  <option value="other">Other Gym Dues</option>
+                </select>
+              </div>
+
+              <div className="form-field modal-form-col-full">
+                <label className="field-label">Administrative Notes / Reference # (Optional)</label>
+                <input
+                  type="text"
+                  className="field-input"
+                  placeholder="e.g. Received by desk manager on duty, transaction reference number..."
+                  value={manualPaymentForm.notes}
+                  onChange={(e) => setManualPaymentForm({ ...manualPaymentForm, notes: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                type="button"
+                onClick={() => setManualPaymentModalOpen(false)}
+                disabled={manualPaymentSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md" disabled={manualPaymentSubmitting}>
+                {manualPaymentSubmitting ? 'Recording...' : 'Record Payment & Fulfill Plan'}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        {/* MODAL 13: ADMIN PAYMENT RECEIPT INSPECTOR */}
+        <Modal
+          isOpen={adminReceiptModalOpen}
+          onClose={() => {
+            setAdminReceiptModalOpen(false);
+            setSelectedAdminReceipt(null);
+          }}
+          title="Payment Audit Receipt"
+          subtitle="Cryptographically verified transaction record and ledger reference."
+          size="md"
+        >
+          {selectedAdminReceipt && (
+            <div className="receipt-view-container">
+              <div className="receipt-header">
+                <div>
+                  <div className="receipt-brand-logo">
+                    IRON<span>FORGE</span> GYM
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Admin Accounting Ledger
+                  </span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <Badge
+                    variant={selectedAdminReceipt.status === 'paid' ? 'primary' : 'warning'}
+                    size="md"
+                  >
+                    {selectedAdminReceipt.status.toUpperCase()}
+                  </Badge>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                    Ref: {selectedAdminReceipt.receiptNumber}
+                  </span>
+                </div>
+              </div>
+
+              <div className="receipt-meta-grid">
+                <div className="receipt-meta-item">
+                  <label>Member Account</label>
+                  <span>{selectedAdminReceipt.member?.user?.name || 'Athlete'}</span>
+                </div>
+                <div className="receipt-meta-item">
+                  <label>Member Email</label>
+                  <span>{selectedAdminReceipt.member?.user?.email || 'N/A'}</span>
+                </div>
+                <div className="receipt-meta-item">
+                  <label>Transaction Date</label>
+                  <span>
+                    {selectedAdminReceipt.paymentDate
+                      ? new Date(selectedAdminReceipt.paymentDate).toLocaleString()
+                      : new Date(selectedAdminReceipt.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="receipt-meta-item">
+                  <label>Payment Channel</label>
+                  <span style={{ textTransform: 'capitalize' }}>
+                    {selectedAdminReceipt.paymentMethod === 'razorpay' ? 'Razorpay Standard' : selectedAdminReceipt.paymentMethod}
+                  </span>
+                </div>
+              </div>
+
+              <table className="receipt-summary-table">
+                <thead>
+                  <tr>
+                    <th>Item Description</th>
+                    <th>Duration</th>
+                    <th style={{ textAlign: 'right' }}>Gross Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ fontWeight: 600, color: '#ffffff' }}>
+                      {selectedAdminReceipt.membershipPlan?.name || (selectedAdminReceipt.purpose === 'renewal' ? 'Membership Renewal' : 'Gym Membership')}
+                    </td>
+                    <td>
+                      {selectedAdminReceipt.membershipPlan?.duration ? `${selectedAdminReceipt.membershipPlan.duration} Months` : 'Custom Term'}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#ffffff' }}>
+                      ₹{selectedAdminReceipt.amount}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="receipt-total-box">
+                <span>Total Collected:</span>
+                <span style={{ color: '#34d399', fontSize: '1.4rem' }}>
+                  ₹{selectedAdminReceipt.amount} INR
+                </span>
+              </div>
+
+              <div style={{ marginTop: '1rem', fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'rgba(255, 255, 255, 0.03)', padding: '0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                <div><strong>Recorded By:</strong> {selectedAdminReceipt.recordedBy?.name || 'Gateway Callback'}</div>
+                {selectedAdminReceipt.razorpayOrderId && (
+                  <div><strong>Razorpay Order ID:</strong> {selectedAdminReceipt.razorpayOrderId}</div>
+                )}
+                {selectedAdminReceipt.razorpayPaymentId && (
+                  <div><strong>Razorpay Payment ID:</strong> {selectedAdminReceipt.razorpayPaymentId}</div>
+                )}
+                {selectedAdminReceipt.notes && (
+                  <div style={{ marginTop: '0.35rem' }}><strong>Notes:</strong> {selectedAdminReceipt.notes}</div>
+                )}
+              </div>
+
+              <div className="modal-actions-row" style={{ marginTop: '1.25rem' }}>
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={() => {
+                    setAdminReceiptModalOpen(false);
+                    setSelectedAdminReceipt(null);
+                  }}
+                >
+                  Close
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
+
+        {/* MODAL 14: EDIT PAYMENT NOTES */}
+        <Modal
+          isOpen={editPaymentNotesModalOpen}
+          onClose={() => {
+            setEditPaymentNotesModalOpen(false);
+            setEditingPayment(null);
+          }}
+          title={`Edit Notes: Receipt ${editingPayment?.receiptNumber || ''}`}
+          subtitle="Update administrative comments or accounting references."
+          size="md"
+        >
+          <form onSubmit={handleSubmitEditPaymentNotes}>
+            {editPaymentNotesError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{editPaymentNotesError}</span>
+              </div>
+            )}
+
+            <div className="form-field">
+              <label className="field-label">Accounting & Admin Notes</label>
+              <textarea
+                rows={4}
+                className="field-input"
+                placeholder="Add internal ledger or desk notes..."
+                value={paymentNotesForm}
+                onChange={(e) => setPaymentNotesForm(e.target.value)}
+              />
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                type="button"
+                onClick={() => {
+                  setEditPaymentNotesModalOpen(false);
+                  setEditingPayment(null);
+                }}
+                disabled={paymentNotesSubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md" disabled={paymentNotesSubmitting}>
+                {paymentNotesSubmitting ? 'Saving...' : 'Save Notes'}
+              </Button>
+            </div>
+          </form>
         </Modal>
       </div>
     </div>

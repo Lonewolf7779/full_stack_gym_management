@@ -25,12 +25,23 @@ import {
   TrendingUp,
   CheckSquare,
   Timer,
+  Receipt,
+  Check,
+  Zap,
+  DollarSign,
 } from 'lucide-react';
 import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Modal from '../../components/common/Modal';
-import { dashboardApi, membersApi, trainingPlansApi, attendanceApi } from '../../services/api';
+import {
+  dashboardApi,
+  membersApi,
+  trainingPlansApi,
+  attendanceApi,
+  membershipPlansApi,
+  paymentsApi,
+} from '../../services/api';
 import './MemberDashboard.css';
 import '../admin/AdminDashboard.css';
 
@@ -61,6 +72,20 @@ export default function MemberDashboard() {
     completedSessions: 0,
   });
   const [loadingAttendance, setLoadingAttendance] = useState(false);
+
+  // Payments & Membership Billing States
+  const [paymentsList, setPaymentsList] = useState([]);
+  const [paymentsSummary, setPaymentsSummary] = useState({
+    totalSpent: 0,
+    totalPaidTransactions: 0,
+  });
+  const [loadingPayments, setLoadingPayments] = useState(false);
+  const [availablePlans, setAvailablePlans] = useState([]);
+  const [renewModalOpen, setRenewModalOpen] = useState(false);
+  const [selectedPlanForPurchase, setSelectedPlanForPurchase] = useState(null);
+  const [paymentProcessing, setPaymentProcessing] = useState(false);
+  const [receiptModalOpen, setReceiptModalOpen] = useState(false);
+  const [selectedReceipt, setSelectedReceipt] = useState(null);
 
   // Edit Profile Modal
   const [editProfileModalOpen, setEditProfileModalOpen] = useState(false);
@@ -132,11 +157,135 @@ export default function MemberDashboard() {
     }
   }, []);
 
+  const loadPaymentHistory = useCallback(async () => {
+    try {
+      setLoadingPayments(true);
+      const res = await paymentsApi.getMyPayments();
+      if (res) {
+        setPaymentsList(res.payments || []);
+        if (res.summary) setPaymentsSummary(res.summary);
+      }
+    } catch (err) {
+      console.warn('[Payments] Error fetching payment history:', err.message);
+    } finally {
+      setLoadingPayments(false);
+    }
+  }, []);
+
+  const loadAvailablePlans = useCallback(async () => {
+    try {
+      const res = await membershipPlansApi.getAll();
+      const activeOnly = (res || []).filter((p) => p.status === 'active');
+      setAvailablePlans(activeOnly);
+      if (activeOnly.length > 0 && !selectedPlanForPurchase) {
+        setSelectedPlanForPurchase(activeOnly[0]);
+      }
+    } catch (err) {
+      console.warn('[Plans] Error fetching membership plans:', err.message);
+    }
+  }, [selectedPlanForPurchase]);
+
   useEffect(() => {
     loadMemberData();
     loadTodayStatus();
     loadAttendanceHistory();
-  }, [loadMemberData, loadTodayStatus, loadAttendanceHistory]);
+    loadPaymentHistory();
+    loadAvailablePlans();
+  }, [loadMemberData, loadTodayStatus, loadAttendanceHistory, loadPaymentHistory, loadAvailablePlans]);
+
+  // Load Razorpay Checkout Script
+  const loadRazorpayScript = () => {
+    return new Promise((resolve) => {
+      if (window.Razorpay) {
+        resolve(true);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(true);
+      script.onerror = () => resolve(false);
+      document.body.appendChild(script);
+    });
+  };
+
+  // Handle Online Payment via Razorpay Standard Checkout
+  const handleInitiatePayment = async (planToBuy) => {
+    const targetPlan = planToBuy || selectedPlanForPurchase;
+    if (!targetPlan) {
+      setError('Please select a membership plan to continue.');
+      return;
+    }
+
+    try {
+      setPaymentProcessing(true);
+      setError('');
+
+      const scriptLoaded = await loadRazorpayScript();
+      if (!scriptLoaded) {
+        setError('Could not initialize Razorpay checkout script. Please check connection.');
+        setPaymentProcessing(false);
+        return;
+      }
+
+      // 1. Create order on backend (authoritative pricing)
+      const orderData = await paymentsApi.createOrder({ planId: targetPlan._id });
+
+      // 2. Open official Razorpay Checkout Modal
+      const options = {
+        key: orderData.keyId,
+        amount: orderData.amountInPaise,
+        currency: orderData.currency || 'INR',
+        name: 'IronForge Gym',
+        description: `Membership - ${orderData.plan?.name || targetPlan.name}`,
+        order_id: orderData.orderId,
+        prefill: {
+          name: dashboardData?.member?.user?.name || user?.name || '',
+          email: dashboardData?.member?.user?.email || user?.email || '',
+          contact: dashboardData?.member?.phone || '',
+        },
+        notes: {
+          memberId: dashboardData?.member?._id,
+          planId: targetPlan._id,
+        },
+        theme: {
+          color: '#ff4d00',
+        },
+        handler: async function (response) {
+          try {
+            // 3. Server-side signature verification & fulfillment
+            await paymentsApi.verifyPayment({
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            });
+
+            flashMessage('Payment confirmed & verified! Your membership is active.');
+            setRenewModalOpen(false);
+            await Promise.all([loadMemberData(), loadPaymentHistory()]);
+          } catch (verifyErr) {
+            setError(verifyErr.message || 'Payment signature verification failed.');
+          } finally {
+            setPaymentProcessing(false);
+          }
+        },
+        modal: {
+          ondismiss: function () {
+            setPaymentProcessing(false);
+          },
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on('payment.failed', function (failResp) {
+        setError(`Payment could not be completed: ${failResp.error?.description || 'Transaction failed'}`);
+        setPaymentProcessing(false);
+      });
+      rzp.open();
+    } catch (err) {
+      setError(err.message || 'Failed to initiate payment.');
+      setPaymentProcessing(false);
+    }
+  };
 
   const flashMessage = (msg) => {
     setSuccessMessage(msg);
@@ -425,7 +574,7 @@ export default function MemberDashboard() {
                         color: '#ffffff',
                       }}
                     >
-                      ${membership.plan.price}
+                      ₹{membership.plan.price}
                     </span>
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
                       {' '}
@@ -469,6 +618,19 @@ export default function MemberDashboard() {
                   </div>
                 </div>
 
+                {/* Action Row */}
+                <div style={{ marginBottom: '1.25rem' }}>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    icon={Zap}
+                    onClick={() => setRenewModalOpen(true)}
+                    style={{ width: '100%' }}
+                  >
+                    Renew / Upgrade Membership Tier
+                  </Button>
+                </div>
+
                 {/* Plan Features */}
                 <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '1.25rem' }}>
                   <h4
@@ -506,9 +668,17 @@ export default function MemberDashboard() {
                   <CreditCard size={28} />
                 </div>
                 <span className="empty-state-title">No Active Membership Plan</span>
-                <p style={{ fontSize: '0.88rem' }}>
-                  Please consult the IronForge front desk to activate a membership tier.
+                <p style={{ fontSize: '0.88rem', marginBottom: '1rem' }}>
+                  Choose an official IronForge membership package to unlock full gym floor access.
                 </p>
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={Zap}
+                  onClick={() => setRenewModalOpen(true)}
+                >
+                  Choose Membership Plan
+                </Button>
               </div>
             )}
           </Card>
@@ -1157,6 +1327,156 @@ export default function MemberDashboard() {
           </Card>
         </div>
 
+        {/* SECTION: MY BILLING & PAYMENT INVOICES */}
+        <div className="member-billing-section">
+          <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
+            <div>
+              <h2 style={{ fontSize: '1.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <CreditCard size={26} className="text-highlight" /> Membership Billing & Payments
+              </h2>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+                Review verified transaction receipts, subscription dues, and online invoice history.
+              </p>
+            </div>
+            <Button
+              variant="primary"
+              size="sm"
+              icon={Zap}
+              onClick={() => setRenewModalOpen(true)}
+            >
+              Renew / Upgrade Tier
+            </Button>
+          </div>
+
+          {/* 3 Billing Summary Metric Cards */}
+          <div className="billing-stats-grid">
+            <div className="billing-stat-box">
+              <span className="billing-stat-label">Total Subscriptions Paid</span>
+              <span className="billing-stat-value" style={{ color: '#34d399' }}>
+                ₹{paymentsSummary.totalSpent || 0}
+              </span>
+              <span className="billing-stat-sub">Lifetime payments completed</span>
+            </div>
+
+            <div className="billing-stat-box">
+              <span className="billing-stat-label">Invoices Issued</span>
+              <span className="billing-stat-value" style={{ color: '#00e5ff' }}>
+                {paymentsSummary.totalPaidTransactions || paymentsList.length} Records
+              </span>
+              <span className="billing-stat-sub">Paid & processed invoices</span>
+            </div>
+
+            <div className="billing-stat-box">
+              <span className="billing-stat-label">Current Membership Tier</span>
+              <span className="billing-stat-value" style={{ color: 'var(--primary)', fontSize: '1.3rem' }}>
+                {membership?.plan?.name || 'No Active Tier'}
+              </span>
+              <span className="billing-stat-sub">
+                {membership?.plan ? `${membership.daysRemaining} days remaining` : 'Select a package to activate'}
+              </span>
+            </div>
+          </div>
+
+          {/* Payment History Invoices Table */}
+          <Card className="glass-panel" padding="none">
+            {paymentsList && paymentsList.length > 0 ? (
+              <div className="table-responsive">
+                <table className="admin-table">
+                  <thead>
+                    <tr>
+                      <th>Receipt #</th>
+                      <th>Date</th>
+                      <th>Plan / Item</th>
+                      <th>Amount</th>
+                      <th>Method</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {paymentsList.map((pay) => (
+                      <tr key={pay._id}>
+                        <td style={{ fontFamily: 'monospace', fontWeight: 700, color: '#ffffff' }}>
+                          {pay.receiptNumber}
+                        </td>
+                        <td>
+                          {pay.paymentDate
+                            ? new Date(pay.paymentDate).toLocaleDateString()
+                            : new Date(pay.createdAt).toLocaleDateString()}
+                        </td>
+                        <td style={{ fontWeight: 600 }}>
+                          {pay.membershipPlan?.name || (pay.purpose === 'renewal' ? 'Membership Renewal' : 'Gym Membership')}
+                        </td>
+                        <td style={{ fontWeight: 800, color: '#ffffff' }}>
+                          ₹{pay.amount}
+                        </td>
+                        <td>
+                          <span
+                            style={{
+                              textTransform: 'uppercase',
+                              fontSize: '0.75rem',
+                              fontWeight: 800,
+                              letterSpacing: '0.05em',
+                              color:
+                                pay.paymentMethod === 'razorpay'
+                                  ? '#00e5ff'
+                                  : pay.paymentMethod === 'cash'
+                                  ? '#34d399'
+                                  : 'var(--primary)',
+                            }}
+                          >
+                            {pay.paymentMethod === 'razorpay' ? 'Razorpay' : pay.paymentMethod}
+                          </span>
+                        </td>
+                        <td>
+                          {pay.status === 'paid' ? (
+                            <Badge variant="primary" size="sm">Paid</Badge>
+                          ) : pay.status === 'pending' ? (
+                            <Badge variant="warning" size="sm">Pending</Badge>
+                          ) : (
+                            <Badge variant="danger" size="sm">Failed</Badge>
+                          )}
+                        </td>
+                        <td>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            icon={Receipt}
+                            onClick={() => {
+                              setSelectedReceipt(pay);
+                              setReceiptModalOpen(true);
+                            }}
+                          >
+                            Receipt
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <div className="empty-state-box" style={{ padding: '2.5rem 1rem' }}>
+                <div className="empty-state-icon">
+                  <CreditCard size={28} />
+                </div>
+                <span className="empty-state-title">No Payment Invoices Yet</span>
+                <p style={{ fontSize: '0.88rem', marginBottom: '1rem' }}>
+                  Upgrade or renew your membership using online Razorpay checkout to view verified payment records here.
+                </p>
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={Zap}
+                  onClick={() => setRenewModalOpen(true)}
+                >
+                  Purchase Membership Plan
+                </Button>
+              </div>
+            )}
+          </Card>
+        </div>
+
         {/* EDIT PROFILE MODAL */}
         <Modal
           isOpen={editProfileModalOpen}
@@ -1268,7 +1588,238 @@ export default function MemberDashboard() {
             </div>
           </form>
         </Modal>
+
+        {/* RENEW / UPGRADE MEMBERSHIP MODAL (RAZORPAY INTEGRATION) */}
+        <Modal
+          isOpen={renewModalOpen}
+          onClose={() => setRenewModalOpen(false)}
+          title="Select Membership Plan & Checkout"
+          subtitle="Choose your preferred tier. Payment is securely processed via Razorpay Sandbox."
+          size="lg"
+        >
+          <div>
+            <div className="plan-selector-grid">
+              {availablePlans.map((p) => {
+                const isSelected = selectedPlanForPurchase?._id === p._id;
+                return (
+                  <div
+                    key={p._id}
+                    className={`plan-select-card ${isSelected ? 'selected' : ''}`}
+                    onClick={() => setSelectedPlanForPurchase(p)}
+                  >
+                    <div>
+                      <div className="plan-select-card-header">
+                        <h4 style={{ fontSize: '1.2rem', fontWeight: 800, color: '#ffffff' }}>
+                          {p.name}
+                        </h4>
+                        {isSelected && (
+                          <Badge variant="primary" size="sm">
+                            <Check size={13} style={{ marginRight: '0.2rem' }} /> Selected
+                          </Badge>
+                        )}
+                      </div>
+                      <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', margin: '0.4rem 0' }}>
+                        {p.description || 'Full gym floor and amenity tier access.'}
+                      </p>
+                    </div>
+
+                    <div>
+                      <div style={{ margin: '0.75rem 0' }}>
+                        <span className="plan-select-card-price">₹{p.price}</span>
+                        <span style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                          {' '}
+                          / {p.duration} {p.duration === 1 ? 'month' : 'months'}
+                        </span>
+                      </div>
+
+                      <ul style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                        {p.features?.slice(0, 3).map((feat, idx) => (
+                          <li key={idx} style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <CheckCircle2 size={14} style={{ color: '#34d399', flexShrink: 0 }} />
+                            <span>{feat}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {selectedPlanForPurchase && (
+              <div
+                style={{
+                  background: 'rgba(255, 77, 0, 0.08)',
+                  border: '1px solid rgba(255, 77, 0, 0.25)',
+                  borderRadius: 'var(--radius-lg)',
+                  padding: '1rem 1.25rem',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginTop: '1.25rem',
+                  flexWrap: 'wrap',
+                  gap: '0.75rem',
+                }}
+              >
+                <div>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--primary)', display: 'block' }}>
+                    Authoritative Order Summary
+                  </span>
+                  <span style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff' }}>
+                    {selectedPlanForPurchase.name} ({selectedPlanForPurchase.duration} Months Subscription)
+                  </span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <span style={{ fontSize: '1.5rem', fontFamily: 'var(--font-heading)', fontWeight: 900, color: '#ffffff' }}>
+                    ₹{selectedPlanForPurchase.price}
+                  </span>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>
+                    Standard Gateway Fee Included
+                  </span>
+                </div>
+              </div>
+            )}
+
+            <div className="modal-actions-row" style={{ marginTop: '1.5rem' }}>
+              <Button
+                variant="ghost"
+                size="md"
+                onClick={() => setRenewModalOpen(false)}
+                disabled={paymentProcessing}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                size="md"
+                icon={Zap}
+                onClick={() => handleInitiatePayment(selectedPlanForPurchase)}
+                disabled={paymentProcessing || !selectedPlanForPurchase}
+              >
+                {paymentProcessing ? 'Connecting to Razorpay...' : `Pay ₹${selectedPlanForPurchase?.price || 0} via Razorpay`}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+
+        {/* PAYMENT RECEIPT MODAL */}
+        <Modal
+          isOpen={receiptModalOpen}
+          onClose={() => {
+            setReceiptModalOpen(false);
+            setSelectedReceipt(null);
+          }}
+          title="Official Payment Receipt"
+          subtitle="Verified transaction receipt from IronForge Gym Management System."
+          size="md"
+        >
+          {selectedReceipt && (
+            <div className="receipt-view-container">
+              <div className="receipt-header">
+                <div>
+                  <div className="receipt-brand-logo">
+                    IRON<span>FORGE</span> GYM
+                  </div>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                    Membership & Billing Division
+                  </span>
+                </div>
+                <div style={{ textAlign: 'right' }}>
+                  <Badge
+                    variant={selectedReceipt.status === 'paid' ? 'primary' : 'warning'}
+                    size="md"
+                  >
+                    {selectedReceipt.status.toUpperCase()}
+                  </Badge>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block', marginTop: '0.25rem' }}>
+                    Ref: {selectedReceipt.receiptNumber}
+                  </span>
+                </div>
+              </div>
+
+              <div className="receipt-meta-grid">
+                <div className="receipt-meta-item">
+                  <label>Billed Athlete</label>
+                  <span>{dashboardData?.member?.user?.name || user?.name}</span>
+                </div>
+                <div className="receipt-meta-item">
+                  <label>Email Address</label>
+                  <span>{dashboardData?.member?.user?.email || user?.email}</span>
+                </div>
+                <div className="receipt-meta-item">
+                  <label>Payment Date</label>
+                  <span>
+                    {selectedReceipt.paymentDate
+                      ? new Date(selectedReceipt.paymentDate).toLocaleString()
+                      : new Date(selectedReceipt.createdAt).toLocaleString()}
+                  </span>
+                </div>
+                <div className="receipt-meta-item">
+                  <label>Payment Method</label>
+                  <span style={{ textTransform: 'capitalize' }}>
+                    {selectedReceipt.paymentMethod === 'razorpay' ? 'Razorpay Online' : selectedReceipt.paymentMethod}
+                  </span>
+                </div>
+              </div>
+
+              <table className="receipt-summary-table">
+                <thead>
+                  <tr>
+                    <th>Description</th>
+                    <th>Term</th>
+                    <th style={{ textAlign: 'right' }}>Total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td style={{ fontWeight: 600, color: '#ffffff' }}>
+                      {selectedReceipt.membershipPlan?.name || 'Membership Subscription Tier'}
+                    </td>
+                    <td>
+                      {selectedReceipt.membershipPlan?.duration ? `${selectedReceipt.membershipPlan.duration} Months` : 'Standard'}
+                    </td>
+                    <td style={{ textAlign: 'right', fontWeight: 700, color: '#ffffff' }}>
+                      ₹{selectedReceipt.amount}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <div className="receipt-total-box">
+                <span>Total Amount Paid:</span>
+                <span style={{ color: '#34d399', fontSize: '1.4rem' }}>
+                  ₹{selectedReceipt.amount} INR
+                </span>
+              </div>
+
+              {selectedReceipt.razorpayPaymentId && (
+                <div style={{ marginTop: '0.75rem', fontSize: '0.8rem', color: 'var(--text-muted)', background: 'rgba(255, 255, 255, 0.03)', padding: '0.5rem 0.75rem', borderRadius: 'var(--radius-sm)' }}>
+                  <div><strong>Razorpay Order ID:</strong> {selectedReceipt.razorpayOrderId || 'N/A'}</div>
+                  <div><strong>Gateway Payment ID:</strong> {selectedReceipt.razorpayPaymentId}</div>
+                </div>
+              )}
+
+              <div className="receipt-footer-note">
+                Thank you for training with IronForge! This is a computer-generated transaction receipt.
+              </div>
+
+              <div className="modal-actions-row" style={{ marginTop: '1.25rem' }}>
+                <Button
+                  variant="ghost"
+                  size="md"
+                  onClick={() => {
+                    setReceiptModalOpen(false);
+                    setSelectedReceipt(null);
+                  }}
+                >
+                  Close Receipt
+                </Button>
+              </div>
+            </div>
+          )}
+        </Modal>
       </div>
     </div>
   );
 }
+

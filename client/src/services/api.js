@@ -824,5 +824,142 @@ export const attendanceApi = {
   },
 };
 
+/**
+ * Payments & Membership Billing API methods
+ */
+export const paymentsApi = {
+  getConfig: async () => {
+    const response = await fetch(`${API_BASE_URL}/payments/config`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch payment config');
+    return data.data;
+  },
+
+  createOrder: async ({ planId, memberId }) => {
+    const response = await fetch(`${API_BASE_URL}/payments/create-order`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ planId, memberId }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to create payment order');
+    return data.data;
+  },
+
+  verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
+    const response = await fetch(`${API_BASE_URL}/payments/verify-payment`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({
+        razorpay_order_id,
+        razorpay_payment_id,
+        razorpay_signature,
+      }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Payment signature verification failed');
+    return data.data;
+  },
+
+  getMyPayments: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/payments/my-payments${queryString}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch payment history');
+    return data.data;
+  },
+
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.page) query.append('page', params.page);
+    if (params.limit) query.append('limit', params.limit);
+    if (params.status) query.append('status', params.status);
+    if (params.paymentMethod) query.append('paymentMethod', params.paymentMethod);
+    if (params.memberId) query.append('memberId', params.memberId);
+    if (params.planId) query.append('planId', params.planId);
+    if (params.startDate) query.append('startDate', params.startDate);
+    if (params.endDate) query.append('endDate', params.endDate);
+    if (params.search) query.append('search', params.search);
+
+    const queryString = query.toString() ? `?${query.toString()}` : '';
+    const response = await fetch(`${API_BASE_URL}/payments/all${queryString}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch payments');
+    return data.data;
+  },
+
+  getStats: async () => {
+    const response = await fetch(`${API_BASE_URL}/payments/stats`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch payment stats');
+    return data.data?.stats;
+  },
+
+  getById: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/payments/${id}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch payment record');
+    return data.data?.payment;
+  },
+
+  recordManual: async (paymentData) => {
+    const response = await fetch(`${API_BASE_URL}/payments/manual`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(paymentData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to record manual payment');
+    return data.data?.payment;
+  },
+
+  updateNotes: async (id, notes) => {
+    const response = await fetch(`${API_BASE_URL}/payments/${id}/notes`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ notes }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update payment notes');
+    return data.data?.payment;
+  },
+};
+
+
 
 

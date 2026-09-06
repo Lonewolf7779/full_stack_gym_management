@@ -5,6 +5,7 @@ const MembershipPlan = require('../models/MembershipPlan');
 const TrainingPlan = require('../models/TrainingPlan');
 const MemberExerciseAssignment = require('../models/MemberExerciseAssignment');
 const Attendance = require('../models/Attendance');
+const Payment = require('../models/Payment');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -394,15 +395,16 @@ const deleteMember = async (req, res, next) => {
       return errorResponse(res, 'Member not found.', null, 404);
     }
 
-    // Safety check: Block deletion if member has active training plans, assigned exercises, or attendance history
+    // Safety check: Block deletion if member has active training plans, assigned exercises, attendance history, or payment records
     const trainingPlansCount = await TrainingPlan.countDocuments({ member: member._id });
     const memberAssignmentsCount = await MemberExerciseAssignment.countDocuments({ member: member._id });
     const attendanceCount = await Attendance.countDocuments({ member: member._id });
+    const paymentsCount = await Payment.countDocuments({ member: member._id });
 
-    if (trainingPlansCount > 0 || memberAssignmentsCount > 0 || attendanceCount > 0) {
+    if (trainingPlansCount > 0 || memberAssignmentsCount > 0 || attendanceCount > 0 || paymentsCount > 0) {
       return errorResponse(
         res,
-        'Cannot delete member with active training plans, assigned exercise records, or attendance history. Deactivate the account instead to preserve gym history.',
+        'Cannot delete member with active training plans, assigned exercise records, attendance history, or payment records. Deactivate the account instead to preserve gym history.',
         null,
         409
       );

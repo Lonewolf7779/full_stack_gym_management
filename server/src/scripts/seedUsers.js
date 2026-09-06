@@ -7,6 +7,7 @@ const MembershipPlan = require('../models/MembershipPlan');
 const Exercise = require('../models/Exercise');
 const TrainingPlan = require('../models/TrainingPlan');
 const Attendance = require('../models/Attendance');
+const Payment = require('../models/Payment');
 const connectDB = require('../config/db');
 
 const seedDatabase = async () => {
@@ -1121,8 +1122,129 @@ const seedDatabase = async () => {
       }
     }
 
+    // 6. Seed Payments & Membership Billing Records
+    console.log('[Seed] Seeding Payments & Billing Records...');
+    const paymentsData = [
+      {
+        receiptNumber: 'REC-SEED-RZP-001',
+        memberName: 'Member Athlete', // member@ironforge.test
+        planName: 'Standard Plan',
+        amount: 59,
+        currency: 'INR',
+        paymentMethod: 'razorpay',
+        status: 'paid',
+        purpose: 'renewal',
+        razorpayOrderId: 'order_seed_rzp_001',
+        razorpayPaymentId: 'pay_seed_rzp_001',
+        paymentDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 15),
+        paidAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 15),
+        notes: 'Verified online Razorpay renewal payment.',
+      },
+      {
+        receiptNumber: 'REC-SEED-RZP-002',
+        memberName: 'Member Athlete', // member@ironforge.test
+        planName: 'Standard Plan',
+        amount: 59,
+        currency: 'INR',
+        paymentMethod: 'razorpay',
+        status: 'paid',
+        purpose: 'membership',
+        razorpayOrderId: 'order_seed_rzp_002',
+        razorpayPaymentId: 'pay_seed_rzp_002',
+        paymentDate: new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()),
+        paidAt: new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()),
+        notes: 'Initial standard membership subscription purchase.',
+      },
+      {
+        receiptNumber: 'REC-SEED-CASH-001',
+        memberName: 'David Miller',
+        planName: 'Premium Elite',
+        amount: 99,
+        currency: 'INR',
+        paymentMethod: 'cash',
+        status: 'paid',
+        purpose: 'membership',
+        paymentDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 10),
+        paidAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 10),
+        notes: 'Paid cash in full at front desk to administrator.',
+      },
+      {
+        receiptNumber: 'REC-SEED-UPI-001',
+        memberName: 'Sarah Connor',
+        planName: 'Basic Plan',
+        amount: 29,
+        currency: 'INR',
+        paymentMethod: 'upi',
+        status: 'paid',
+        purpose: 'renewal',
+        paymentDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 5),
+        paidAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 5),
+        notes: 'Direct gym UPI QR payment settled at counter.',
+      },
+      {
+        receiptNumber: 'REC-SEED-CARD-001',
+        memberName: 'Michael Scott',
+        planName: 'Standard Plan',
+        amount: 59,
+        currency: 'INR',
+        paymentMethod: 'card',
+        status: 'paid',
+        purpose: 'membership',
+        paymentDate: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 22),
+        paidAt: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 22),
+        notes: 'Terminal POS swipe transaction.',
+      },
+      {
+        receiptNumber: 'REC-SEED-PEND-001',
+        memberName: 'Alex Wong',
+        planName: 'Basic Plan',
+        amount: 29,
+        currency: 'INR',
+        paymentMethod: 'razorpay',
+        status: 'pending',
+        purpose: 'renewal',
+        razorpayOrderId: 'order_seed_rzp_pending_001',
+        paymentDate: new Date(),
+        notes: 'Pending checkout order session awaiting gateway completion.',
+      },
+    ];
+
+    for (const item of paymentsData) {
+      const member = memberMap[item.memberName];
+      const plan = item.planName ? planMap[item.planName] : null;
+
+      if (!member) continue;
+
+      let payment = await Payment.findOne({ receiptNumber: item.receiptNumber });
+      if (!payment) {
+        await Payment.create({
+          member: member._id,
+          membershipPlan: plan ? plan._id : null,
+          amount: item.amount,
+          currency: item.currency || 'INR',
+          paymentMethod: item.paymentMethod,
+          status: item.status,
+          purpose: item.purpose,
+          razorpayOrderId: item.razorpayOrderId || null,
+          razorpayPaymentId: item.razorpayPaymentId || null,
+          receiptNumber: item.receiptNumber,
+          paymentDate: item.paymentDate,
+          paidAt: item.paidAt || null,
+          notes: item.notes,
+          recordedBy: adminUser._id,
+        });
+        console.log(`[Seed] Created Payment: ${item.receiptNumber} - ₹${item.amount} (${item.paymentMethod} / ${item.status}) for ${item.memberName}`);
+      } else {
+        payment.amount = item.amount;
+        payment.status = item.status;
+        payment.paymentMethod = item.paymentMethod;
+        payment.notes = item.notes;
+        await payment.save();
+      }
+    }
+
     console.log('====================================================');
-    console.log('🎉 Phase 7 Attendance & Core Data Seeded Successfully:');
+    console.log('🎉 Phase 8 Payments, Billing & Core Data Seeded Successfully:');
     console.log('----------------------------------------------------');
     console.log('📦 Membership Plans: 3 plans (Basic, Standard, Premium Elite)');
     console.log('🏋️ Trainers:         3 trainers (Marcus Vance, Elena Rostova, Darius Thorne)');
@@ -1130,6 +1252,7 @@ const seedDatabase = async () => {
     console.log('📚 Exercise Catalog: 20 comprehensive exercises across all muscle groups');
     console.log('📋 Training Plans:   3 active workout routines assigned to members');
     console.log('⏱️ Attendance Logs:   9 verified historical & active check-in sessions');
+    console.log('💳 Payment Ledgers:  6 verified transactions (Razorpay, Cash, UPI, Card, Pending)');
     console.log('👤 Demo Admin:       admin@ironforge.test   | Pass: Admin@123');
     console.log('🏋️ Demo Trainer:     trainer@ironforge.test | Pass: Trainer@123');
     console.log('🏃 Demo Member:      member@ironforge.test  | Pass: Member@123');
