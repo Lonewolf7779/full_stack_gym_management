@@ -193,17 +193,16 @@
   color: var(--text-muted);
 }
 
-.footer-badges {
-  display: flex;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.badge-tech {
-  font-size: 0.75rem;
+.footer-project-tag {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
   background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  padding: 0.25rem 0.6rem;
+  padding: 0.35rem 0.85rem;
   border-radius: var(--radius-sm);
-  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  letter-spacing: 0.02em;
 }

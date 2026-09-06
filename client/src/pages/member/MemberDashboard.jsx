@@ -1068,19 +1068,21 @@ export default function MemberDashboard() {
 
         {/* SECTION: MY TRAINING PLAN & WORKOUT ROUTINE */}
         <div className="member-workout-section">
-          <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="member-section-header">
+            <div className="member-section-header-info">
+              <h2 className="member-section-title">
                 <Dumbbell size={26} className="text-highlight" /> My Training Plan & Routine
               </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+              <p className="member-section-desc">
                 Personalized workout regimen assigned by your IronForge personal coach.
               </p>
             </div>
             {activePlan && (
-              <Badge variant="secondary" size="md">
-                Active Routine
-              </Badge>
+              <div className="member-section-actions">
+                <Badge variant="secondary" size="md">
+                  Active Routine
+                </Badge>
+              </div>
             )}
           </div>
 
@@ -1272,17 +1274,8 @@ export default function MemberDashboard() {
           {/* SECTION: DIRECT MOVEMENTS PRESCRIBED BY COACH */}
           {assignedExercises && assignedExercises.length > 0 && (
             <div style={{ marginTop: activePlan ? '2rem' : '0' }}>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginBottom: '1rem',
-                  borderBottom: '1px solid var(--border-subtle)',
-                  paddingBottom: '0.5rem',
-                }}
-              >
-                <div>
+              <div className="member-section-header" style={{ borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>
+                <div className="member-section-header-info">
                   <h3
                     style={{
                       fontSize: '1.2rem',
@@ -1296,13 +1289,15 @@ export default function MemberDashboard() {
                   >
                     <Sparkles size={18} className="text-highlight" /> Direct Movements Prescribed by Coach
                   </h3>
-                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                  <p className="member-section-desc" style={{ fontSize: '0.85rem' }}>
                     Individual target exercises assigned directly to you by your personal trainer.
                   </p>
                 </div>
-                <Badge variant="secondary" size="sm">
-                  {assignedExercises.length} Prescribed
-                </Badge>
+                <div className="member-section-actions">
+                  <Badge variant="secondary" size="sm">
+                    {assignedExercises.length} Prescribed
+                  </Badge>
+                </div>
               </div>
 
               <div className="member-exercise-cards-grid">
@@ -1445,18 +1440,20 @@ export default function MemberDashboard() {
 
         {/* SECTION: MY ATTENDANCE RECORD & VISIT STATS */}
         <div className="attendance-history-section">
-          <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="member-section-header">
+            <div className="member-section-header-info">
+              <h2 className="member-section-title">
                 <Clock size={26} className="text-highlight" /> My Attendance & Gym Visits
               </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+              <p className="member-section-desc">
                 Track your consistency, check-in history, and gym workout sessions.
               </p>
             </div>
-            <Badge variant="primary" size="md">
-              {attendanceStats.thisMonthDays} Visits This Month
-            </Badge>
+            <div className="member-section-actions">
+              <Badge variant="primary" size="md">
+                {attendanceStats.thisMonthDays} Visits This Month
+              </Badge>
+            </div>
           </div>
 
           {/* 4 Attendance Metrics */}
@@ -1553,16 +1550,16 @@ export default function MemberDashboard() {
 
         {/* SECTION: FITNESS PROGRESS & BODY COMPOSITION TRACKING */}
         <div className="member-progress-section" style={{ marginBottom: 'var(--space-2xl)' }}>
-          <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="member-section-header">
+            <div className="member-section-header-info">
+              <h2 className="member-section-title">
                 <Activity size={26} className="text-highlight" /> Fitness Progress & Body Composition
               </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+              <p className="member-section-desc">
                 Track your weight evolution, body composition reduction, and circumference milestones.
               </p>
             </div>
-            <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <div className="member-section-actions">
               <Button
                 variant="outline"
                 size="sm"
@@ -1753,23 +1750,25 @@ export default function MemberDashboard() {
 
         {/* SECTION: MY BILLING & PAYMENT INVOICES */}
         <div className="member-billing-section">
-          <div className="card-title-header" style={{ marginBottom: '1.25rem' }}>
-            <div>
-              <h2 style={{ fontSize: '1.6rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="member-section-header">
+            <div className="member-section-header-info">
+              <h2 className="member-section-title">
                 <CreditCard size={26} className="text-highlight" /> Membership Billing & Payments
               </h2>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.92rem' }}>
+              <p className="member-section-desc">
                 Review verified transaction receipts, subscription dues, and online invoice history.
               </p>
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              icon={Zap}
-              onClick={() => setRenewModalOpen(true)}
-            >
-              Renew / Upgrade Tier
-            </Button>
+            <div className="member-section-actions">
+              <Button
+                variant="primary"
+                size="sm"
+                icon={Zap}
+                onClick={() => setRenewModalOpen(true)}
+              >
+                Renew / Upgrade Tier
+              </Button>
+            </div>
           </div>
 
           {/* 3 Billing Summary Metric Cards */}
@@ -1970,7 +1969,7 @@ export default function MemberDashboard() {
 
               <div className="form-field modal-form-col-full">
                 <label className="field-label">Emergency Contact (Name / Phone / Relation)</label>
-                <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr 1fr', gap: '0.5rem' }}>
+                <div className="emergency-inputs-grid">
                   <input
                     type="text"
                     className="field-input"

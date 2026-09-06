@@ -90,12 +90,10 @@ export default function Footer() {
         {/* Bottom bar */}
         <div className="footer-bottom">
           <p className="copyright">
-            &copy; {new Date().getFullYear()} IronForge Fitness &bull; Full-Stack Gym Management System. Built for College Project.
+            &copy; {new Date().getFullYear()} IronForge Fitness &bull; All Rights Reserved.
           </p>
-          <div className="footer-badges">
-            <span className="badge-tech">Node.js + Express</span>
-            <span className="badge-tech">MongoDB + Mongoose</span>
-            <span className="badge-tech">React SPA</span>
+          <div className="footer-project-tag">
+            <span>A College Project &bull; IronForge Fitness</span>
           </div>
         </div>
       </div>
