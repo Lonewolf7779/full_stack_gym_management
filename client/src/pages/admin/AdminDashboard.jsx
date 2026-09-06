@@ -17,9 +17,13 @@ import {
   Phone,
   Mail,
   UserCheck,
+  UserX,
   TrendingUp,
   Dumbbell,
   Eye,
+  EyeOff,
+  Lock,
+  Key,
   Calendar,
   Layers,
   ChevronRight,
@@ -38,6 +42,7 @@ import {
   exercisesApi,
   trainingPlansApi,
   trainerExerciseAssignmentsApi,
+  usersApi,
 } from '../../services/api';
 import './AdminDashboard.css';
 
@@ -150,6 +155,18 @@ export default function AdminDashboard() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  // Password Visibility States
+  const [showMemberPassword, setShowMemberPassword] = useState(false);
+  const [showTrainerPassword, setShowTrainerPassword] = useState(false);
+
+  // Reset Password Modal States
+  const [resetPasswordModalOpen, setResetPasswordModalOpen] = useState(false);
+  const [resetPasswordTarget, setResetPasswordTarget] = useState(null); // { id, name, email, role }
+  const [newPasswordValue, setNewPasswordValue] = useState('');
+  const [showResetPassword, setShowResetPassword] = useState(false);
+  const [resetSubmitting, setResetSubmitting] = useState(false);
+  const [resetError, setResetError] = useState('');
+
   // Load all dashboard data
   const loadDashboardData = useCallback(async () => {
     try {
@@ -185,6 +202,74 @@ export default function AdminDashboard() {
   const flashMessage = (msg) => {
     setSuccessMessage(msg);
     setTimeout(() => setSuccessMessage(''), 4000);
+  };
+
+  // --- Account Status Toggle Handler ---
+  const handleToggleUserStatus = async (userObj, currentStatus, label) => {
+    if (!userObj?._id) return;
+    const targetStatus = currentStatus === 'active' ? 'inactive' : 'active';
+    const actionLabel = targetStatus === 'active' ? 'activate' : 'deactivate';
+
+    if (userObj._id === user?.id && targetStatus === 'inactive') {
+      alert('You cannot deactivate your own administrator account.');
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Are you sure you want to ${actionLabel} the account for ${label || userObj.name || 'this user'}?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      await usersApi.updateStatus(userObj._id, targetStatus);
+      flashMessage(
+        `Account for ${label || userObj.name} has been ${targetStatus === 'active' ? 'activated' : 'deactivated'}.`
+      );
+      await loadDashboardData();
+    } catch (err) {
+      alert(err.message || `Failed to ${actionLabel} account.`);
+    }
+  };
+
+  // --- Reset Password Handlers ---
+  const handleOpenResetPassword = (userObj, roleLabel) => {
+    if (!userObj?._id) return;
+    setResetPasswordTarget({
+      id: userObj._id,
+      name: userObj.name || 'User',
+      email: userObj.email || '',
+      role: roleLabel || userObj.role || 'user',
+    });
+    setNewPasswordValue('');
+    setShowResetPassword(false);
+    setResetError('');
+    setResetPasswordModalOpen(true);
+  };
+
+  const handleSubmitResetPassword = async (e) => {
+    e.preventDefault();
+    if (!resetPasswordTarget?.id) return;
+    if (!newPasswordValue || newPasswordValue.length < 6) {
+      setResetError('New password must be at least 6 characters long.');
+      return;
+    }
+
+    try {
+      setResetSubmitting(true);
+      setResetError('');
+      await usersApi.resetPassword(resetPasswordTarget.id, newPasswordValue);
+      flashMessage(`Password for ${resetPasswordTarget.name} has been reset successfully.`);
+      setResetPasswordModalOpen(false);
+      setResetPasswordTarget(null);
+      setNewPasswordValue('');
+    } catch (err) {
+      setResetError(err.message || 'Failed to reset password.');
+    } finally {
+      setResetSubmitting(false);
+    }
   };
 
   // --- Member Detail Inspector ---
@@ -965,6 +1050,36 @@ export default function AdminDashboard() {
                             >
                               <Edit2 size={15} />
                             </button>
+                            {m.user && (
+                              <>
+                                <button
+                                  className={`btn-icon-action ${
+                                    m.status === 'active' ? 'btn-icon-warning' : 'btn-icon-success'
+                                  }`}
+                                  title={
+                                    m.status === 'active'
+                                      ? 'Deactivate Member Account'
+                                      : 'Activate Member Account'
+                                  }
+                                  onClick={() =>
+                                    handleToggleUserStatus(m.user, m.status, m.user?.name)
+                                  }
+                                >
+                                  {m.status === 'active' ? (
+                                    <UserX size={15} />
+                                  ) : (
+                                    <UserCheck size={15} />
+                                  )}
+                                </button>
+                                <button
+                                  className="btn-icon-action"
+                                  title="Reset Member Password"
+                                  onClick={() => handleOpenResetPassword(m.user, 'Member')}
+                                >
+                                  <Key size={15} />
+                                </button>
+                              </>
+                            )}
                             <button
                               className="btn-icon-action btn-icon-delete"
                               title="Delete Member"
@@ -1075,6 +1190,36 @@ export default function AdminDashboard() {
                             >
                               <Edit2 size={15} />
                             </button>
+                            {t.user && (
+                              <>
+                                <button
+                                  className={`btn-icon-action ${
+                                    t.status === 'active' ? 'btn-icon-warning' : 'btn-icon-success'
+                                  }`}
+                                  title={
+                                    t.status === 'active'
+                                      ? 'Deactivate Coach Account'
+                                      : 'Activate Coach Account'
+                                  }
+                                  onClick={() =>
+                                    handleToggleUserStatus(t.user, t.status, t.user?.name)
+                                  }
+                                >
+                                  {t.status === 'active' ? (
+                                    <UserX size={15} />
+                                  ) : (
+                                    <UserCheck size={15} />
+                                  )}
+                                </button>
+                                <button
+                                  className="btn-icon-action"
+                                  title="Reset Coach Password"
+                                  onClick={() => handleOpenResetPassword(t.user, 'Coach')}
+                                >
+                                  <Key size={15} />
+                                </button>
+                              </>
+                            )}
                             <button
                               className="btn-icon-action btn-icon-delete"
                               title="Delete Trainer"
@@ -1853,14 +1998,25 @@ export default function AdminDashboard() {
                   </div>
                   <div className="form-field">
                     <label className="field-label">Initial Password * (Min 6 chars)</label>
-                    <input
-                      type="password"
-                      required
-                      className="field-input"
-                      placeholder="Enter strong password"
-                      value={memberForm.password}
-                      onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })}
-                    />
+                    <div className="password-input-wrapper">
+                      <input
+                        type={showMemberPassword ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        className="field-input"
+                        placeholder="Enter strong password"
+                        value={memberForm.password}
+                        onChange={(e) => setMemberForm({ ...memberForm, password: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle-btn"
+                        onClick={() => setShowMemberPassword(!showMemberPassword)}
+                        title={showMemberPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showMemberPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -2032,14 +2188,25 @@ export default function AdminDashboard() {
                   </div>
                   <div className="form-field">
                     <label className="field-label">Password * (Min 6 chars)</label>
-                    <input
-                      type="password"
-                      required
-                      className="field-input"
-                      placeholder="Password"
-                      value={trainerForm.password}
-                      onChange={(e) => setTrainerForm({ ...trainerForm, password: e.target.value })}
-                    />
+                    <div className="password-input-wrapper">
+                      <input
+                        type={showTrainerPassword ? 'text' : 'password'}
+                        required
+                        minLength={6}
+                        className="field-input"
+                        placeholder="Password"
+                        value={trainerForm.password}
+                        onChange={(e) => setTrainerForm({ ...trainerForm, password: e.target.value })}
+                      />
+                      <button
+                        type="button"
+                        className="password-toggle-btn"
+                        onClick={() => setShowTrainerPassword(!showTrainerPassword)}
+                        title={showTrainerPassword ? 'Hide password' : 'Show password'}
+                      >
+                        {showTrainerPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
                   </div>
                 </>
               )}
@@ -2503,6 +2670,71 @@ export default function AdminDashboard() {
               </div>
             </form>
           )}
+        </Modal>
+
+        {/* MODAL 7: RESET USER PASSWORD */}
+        <Modal
+          isOpen={resetPasswordModalOpen}
+          onClose={() => {
+            setResetPasswordModalOpen(false);
+            setResetPasswordTarget(null);
+          }}
+          title={`Reset Password: ${resetPasswordTarget?.name || 'User Account'}`}
+          subtitle={`Set a new secure password for ${resetPasswordTarget?.email} (${resetPasswordTarget?.role}).`}
+          size="sm"
+        >
+          <form onSubmit={handleSubmitResetPassword}>
+            {resetError && (
+              <div className="assignment-error-banner" style={{ marginBottom: '1rem' }}>
+                <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                <span>{resetError}</span>
+              </div>
+            )}
+
+            <div className="form-field" style={{ marginBottom: '1.5rem' }}>
+              <label className="field-label">New Password * (Min 6 characters)</label>
+              <div className="password-input-wrapper">
+                <input
+                  type={showResetPassword ? 'text' : 'password'}
+                  required
+                  minLength={6}
+                  className="field-input"
+                  placeholder="Enter new strong password"
+                  value={newPasswordValue}
+                  onChange={(e) => {
+                    setNewPasswordValue(e.target.value);
+                    setResetError('');
+                  }}
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  className="password-toggle-btn"
+                  onClick={() => setShowResetPassword(!showResetPassword)}
+                  title={showResetPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showResetPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
+              </div>
+            </div>
+
+            <div className="modal-actions-row">
+              <Button
+                variant="ghost"
+                size="md"
+                type="button"
+                onClick={() => {
+                  setResetPasswordModalOpen(false);
+                  setResetPasswordTarget(null);
+                }}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" variant="primary" size="md" disabled={resetSubmitting}>
+                {resetSubmitting ? 'Updating...' : 'Reset Password'}
+              </Button>
+            </div>
+          </form>
         </Modal>
       </div>
     </div>

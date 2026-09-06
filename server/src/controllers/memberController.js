@@ -151,6 +151,7 @@ const getMemberProfile = async (req, res, next) => {
  * @access  Private (Admin only)
  */
 const createMember = async (req, res, next) => {
+  let user = null;
   try {
     const {
       name,
@@ -183,25 +184,42 @@ const createMember = async (req, res, next) => {
       return errorResponse(res, 'An account with this email already exists.', null, 409);
     }
 
-    // Create User with enforced 'member' role
-    const user = await User.create({
-      name: name.trim(),
-      email: normalizedEmail,
-      password,
-      role: 'member',
-    });
+    // Validate assigned trainer if provided
+    if (assignedTrainer) {
+      const trainerDoc = await Trainer.findById(assignedTrainer);
+      if (!trainerDoc || trainerDoc.status !== 'active') {
+        return errorResponse(
+          res,
+          'Assigned trainer must be an active trainer.',
+          null,
+          400
+        );
+      }
+    }
 
-    // Calculate membership dates if plan assigned
+    // Validate membership plan if provided
     let startDate = null;
     let endDate = null;
     if (membershipPlan) {
       const planDoc = await MembershipPlan.findById(membershipPlan);
-      if (planDoc) {
-        startDate = new Date();
-        endDate = new Date();
-        endDate.setMonth(endDate.getMonth() + (planDoc.duration || 1));
+      if (!planDoc) {
+        return errorResponse(res, 'Membership plan not found.', null, 400);
       }
+      startDate = new Date();
+      endDate = new Date();
+      endDate.setMonth(endDate.getMonth() + (planDoc.duration || 1));
     }
+
+    const memberStatus = status === 'inactive' ? 'inactive' : 'active';
+
+    // Create User with enforced 'member' role (cannot be escalated)
+    user = await User.create({
+      name: name.trim(),
+      email: normalizedEmail,
+      password,
+      role: 'member',
+      status: memberStatus,
+    });
 
     const member = await Member.create({
       user: user._id,
@@ -214,12 +232,12 @@ const createMember = async (req, res, next) => {
       membershipStartDate: startDate,
       membershipEndDate: endDate,
       assignedTrainer: assignedTrainer || null,
-      status: status || 'active',
+      status: memberStatus,
       notes: notes || '',
     });
 
     const populatedMember = await Member.findById(member._id)
-      .populate('user', 'name email role')
+      .populate('user', 'name email role status createdAt')
       .populate('membershipPlan', 'name price duration')
       .populate({
         path: 'assignedTrainer',
@@ -233,6 +251,10 @@ const createMember = async (req, res, next) => {
       201
     );
   } catch (error) {
+    // Atomic rollback: Delete user account if profile creation failed
+    if (user && user._id) {
+      await User.findByIdAndDelete(user._id).catch(() => {});
+    }
     next(error);
   }
 };
@@ -257,6 +279,7 @@ const updateMember = async (req, res, next) => {
 
     const {
       name,
+      email,
       phone,
       dateOfBirth,
       gender,
@@ -267,6 +290,19 @@ const updateMember = async (req, res, next) => {
       status,
       notes,
     } = req.body;
+
+    // Handle user email update if provided
+    if (email && email.trim()) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const existingUser = await User.findOne({
+        email: normalizedEmail,
+        _id: { $ne: member.user },
+      });
+      if (existingUser) {
+        return errorResponse(res, 'Email already in use by another account.', null, 409);
+      }
+      await User.findByIdAndUpdate(member.user, { email: normalizedEmail });
+    }
 
     // Update User name
     if (name && name.trim()) {
@@ -286,13 +322,14 @@ const updateMember = async (req, res, next) => {
         // If plan changed or newly assigned, calculate new end date
         if (membershipPlan && membershipPlan !== (member.membershipPlan ? member.membershipPlan.toString() : '')) {
           const planDoc = await MembershipPlan.findById(membershipPlan);
-          if (planDoc) {
-            member.membershipPlan = planDoc._id;
-            member.membershipStartDate = new Date();
-            const newEndDate = new Date();
-            newEndDate.setMonth(newEndDate.getMonth() + (planDoc.duration || 1));
-            member.membershipEndDate = newEndDate;
+          if (!planDoc) {
+            return errorResponse(res, 'Membership plan not found.', null, 400);
           }
+          member.membershipPlan = planDoc._id;
+          member.membershipStartDate = new Date();
+          const newEndDate = new Date();
+          newEndDate.setMonth(newEndDate.getMonth() + (planDoc.duration || 1));
+          member.membershipEndDate = newEndDate;
         } else if (!membershipPlan) {
           member.membershipPlan = null;
           member.membershipStartDate = null;
@@ -301,17 +338,35 @@ const updateMember = async (req, res, next) => {
       }
 
       if (assignedTrainer !== undefined) {
-        member.assignedTrainer = assignedTrainer || null;
+        if (assignedTrainer) {
+          const trainerDoc = await Trainer.findById(assignedTrainer);
+          if (!trainerDoc || trainerDoc.status !== 'active') {
+            return errorResponse(
+              res,
+              'Assigned trainer must be an active trainer.',
+              null,
+              400
+            );
+          }
+          member.assignedTrainer = assignedTrainer;
+        } else {
+          member.assignedTrainer = null;
+        }
       }
 
-      if (status !== undefined) member.status = status;
+      if (status !== undefined) {
+        member.status = status;
+        await User.findByIdAndUpdate(member.user, {
+          status: status === 'inactive' ? 'inactive' : 'active',
+        });
+      }
       if (notes !== undefined) member.notes = notes;
     }
 
     await member.save();
 
     const updatedMember = await Member.findById(member._id)
-      .populate('user', 'name email role')
+      .populate('user', 'name email role status createdAt')
       .populate('membershipPlan', 'name price duration')
       .populate({
         path: 'assignedTrainer',

@@ -42,6 +42,7 @@ const sendTokenCookie = (res, user, statusCode = 200, message = 'Success') => {
     name: user.name,
     email: user.email,
     role: user.role,
+    status: user.status || 'active',
     createdAt: user.createdAt,
   };
 

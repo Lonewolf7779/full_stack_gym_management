@@ -7,7 +7,7 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed": "node src/scripts/seedUsers.js",
-    "test": "node test_phase5_1.js"
+    "test": "node test_phase6.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",

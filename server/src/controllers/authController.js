@@ -1,4 +1,5 @@
 const User = require('../models/User');
+const Member = require('../models/Member');
 const { sendTokenCookie, clearTokenCookie } = require('../utils/token');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
@@ -8,6 +9,7 @@ const { successResponse, errorResponse } = require('../utils/apiResponse');
  * @access  Public
  */
 const register = async (req, res, next) => {
+  let createdUser = null;
   try {
     const { name, email, password } = req.body;
 
@@ -38,15 +40,30 @@ const register = async (req, res, next) => {
     }
 
     // Security: Enforce 'member' role for public registration
-    const user = await User.create({
+    createdUser = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       password,
-      role: 'member', // Strictly enforced
+      role: 'member',
+      status: 'active',
     });
 
-    return sendTokenCookie(res, user, 201, 'Registration successful. Welcome to IronForge!');
+    // Create linked Member domain profile
+    await Member.create({
+      user: createdUser._id,
+      status: 'active',
+    });
+
+    return sendTokenCookie(res, createdUser, 201, 'Registration successful. Welcome to IronForge!');
   } catch (error) {
+    // Atomic Rollback: Clean up created User if profile creation fails
+    if (createdUser && createdUser._id) {
+      try {
+        await User.findByIdAndDelete(createdUser._id);
+      } catch (cleanupErr) {
+        console.error('[Rollback Error] Failed to delete orphan user:', cleanupErr.message);
+      }
+    }
     next(error);
   }
 };
@@ -71,6 +88,16 @@ const login = async (req, res, next) => {
     const user = await User.findOne({ email: normalizedEmail }).select('+password');
     if (!user) {
       return errorResponse(res, 'Invalid email or password.', null, 401);
+    }
+
+    // Check Account Status (Gating)
+    if (user.status === 'inactive') {
+      return errorResponse(
+        res,
+        'Your account is inactive. Please contact the gym administrator.',
+        null,
+        401
+      );
     }
 
     // Compare passwords
@@ -106,6 +133,7 @@ const getMe = async (req, res) => {
     name: req.user.name,
     email: req.user.email,
     role: req.user.role,
+    status: req.user.status,
     createdAt: req.user.createdAt,
   };
 

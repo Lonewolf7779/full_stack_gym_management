@@ -130,6 +130,7 @@ const getTrainerProfile = async (req, res, next) => {
  * @access  Private (Admin only)
  */
 const createTrainer = async (req, res, next) => {
+  let user = null;
   try {
     const {
       name,
@@ -160,19 +161,22 @@ const createTrainer = async (req, res, next) => {
       return errorResponse(res, 'An account with this email already exists.', null, 409);
     }
 
-    // Create User with role 'trainer'
-    const user = await User.create({
+    const trainerStatus = status === 'inactive' ? 'inactive' : 'active';
+
+    // Create User with role 'trainer' (cannot be escalated to admin)
+    user = await User.create({
       name: name.trim(),
       email: normalizedEmail,
       password,
       role: 'trainer',
+      status: trainerStatus,
     });
 
     // Create Trainer Profile
     const certArray = Array.isArray(certifications)
       ? certifications
       : typeof certifications === 'string'
-      ? certifications.split(',').map((c) => c.trim())
+      ? certifications.split(',').map((c) => c.trim()).filter(Boolean)
       : [];
 
     const trainer = await Trainer.create({
@@ -182,12 +186,12 @@ const createTrainer = async (req, res, next) => {
       experience: experience || '1 Year',
       certifications: certArray,
       bio: bio || '',
-      status: status || 'active',
+      status: trainerStatus,
     });
 
     const populatedTrainer = await Trainer.findById(trainer._id).populate(
       'user',
-      'name email role'
+      'name email role status createdAt'
     );
 
     return successResponse(
@@ -197,6 +201,10 @@ const createTrainer = async (req, res, next) => {
       201
     );
   } catch (error) {
+    // Atomic rollback: Delete user account if profile creation failed
+    if (user && user._id) {
+      await User.findByIdAndDelete(user._id).catch(() => {});
+    }
     next(error);
   }
 };
@@ -228,6 +236,7 @@ const updateTrainer = async (req, res, next) => {
 
     const {
       name,
+      email,
       phone,
       specialization,
       experience,
@@ -236,7 +245,20 @@ const updateTrainer = async (req, res, next) => {
       status,
     } = req.body;
 
-    // Update User name if provided and admin/owner
+    // Handle user email update if provided
+    if (email && email.trim()) {
+      const normalizedEmail = email.trim().toLowerCase();
+      const existingUser = await User.findOne({
+        email: normalizedEmail,
+        _id: { $ne: trainer.user },
+      });
+      if (existingUser) {
+        return errorResponse(res, 'Email already in use by another account.', null, 409);
+      }
+      await User.findByIdAndUpdate(trainer.user, { email: normalizedEmail });
+    }
+
+    // Update User name if provided
     if (name && name.trim()) {
       await User.findByIdAndUpdate(trainer.user, { name: name.trim() });
     }
@@ -250,20 +272,21 @@ const updateTrainer = async (req, res, next) => {
       trainer.certifications = Array.isArray(certifications)
         ? certifications
         : typeof certifications === 'string'
-        ? certifications.split(',').map((c) => c.trim())
+        ? certifications.split(',').map((c) => c.trim()).filter(Boolean)
         : [];
     }
 
     // Only admin can change status
     if (status !== undefined && req.user.role === 'admin') {
       trainer.status = status;
+      await User.findByIdAndUpdate(trainer.user, { status });
     }
 
     await trainer.save();
 
     const updatedTrainer = await Trainer.findById(trainer._id).populate(
       'user',
-      'name email role'
+      'name email role status createdAt'
     );
 
     return successResponse(res, 'Trainer updated successfully.', {

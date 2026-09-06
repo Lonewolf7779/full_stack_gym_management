@@ -637,3 +637,39 @@ export const memberExerciseAssignmentsApi = {
   },
 };
 
+/**
+ * Users Management API methods (Admin only)
+ */
+export const usersApi = {
+  updateStatus: async (id, status) => {
+    const response = await fetch(`${API_BASE_URL}/users/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ status }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to update user status');
+    return data;
+  },
+
+  resetPassword: async (id, password) => {
+    const response = await fetch(`${API_BASE_URL}/users/${id}/password`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ password }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to reset password');
+    return data;
+  },
+};
+
+

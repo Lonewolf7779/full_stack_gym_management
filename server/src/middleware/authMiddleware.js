@@ -47,6 +47,16 @@ const protect = async (req, res, next) => {
       );
     }
 
+    // Gating check: Block access if account has been deactivated
+    if (user.status === 'inactive') {
+      return errorResponse(
+        res,
+        'Your account is inactive. Please contact the gym administrator.',
+        null,
+        401
+      );
+    }
+
     // Attach user to request object
     req.user = user;
     next();

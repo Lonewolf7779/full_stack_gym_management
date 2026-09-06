@@ -9,6 +9,7 @@ const exerciseRoutes = require('./exerciseRoutes');
 const trainingPlanRoutes = require('./trainingPlanRoutes');
 const trainerExerciseAssignmentRoutes = require('./trainerExerciseAssignmentRoutes');
 const memberExerciseAssignmentRoutes = require('./memberExerciseAssignmentRoutes');
+const userRoutes = require('./userRoutes');
 
 const router = express.Router();
 
@@ -23,5 +24,6 @@ router.use('/exercises', exerciseRoutes);
 router.use('/training-plans', trainingPlanRoutes);
 router.use('/trainer-exercise-assignments', trainerExerciseAssignmentRoutes);
 router.use('/member-exercise-assignments', memberExerciseAssignmentRoutes);
+router.use('/users', userRoutes);
 
 module.exports = router;

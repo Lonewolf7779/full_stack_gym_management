@@ -35,6 +35,15 @@ const userSchema = new mongoose.Schema(
       default: 'member',
       required: true,
     },
+    status: {
+      type: String,
+      enum: {
+        values: ['active', 'inactive'],
+        message: '{VALUE} is not a valid status',
+      },
+      default: 'active',
+      index: true,
+    },
   },
   {
     timestamps: true,
