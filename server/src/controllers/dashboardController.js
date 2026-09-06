@@ -4,6 +4,7 @@ const MembershipPlan = require('../models/MembershipPlan');
 const User = require('../models/User');
 const Exercise = require('../models/Exercise');
 const TrainingPlan = require('../models/TrainingPlan');
+const MemberExerciseAssignment = require('../models/MemberExerciseAssignment');
 const { successResponse, errorResponse } = require('../utils/apiResponse');
 
 /**
@@ -188,6 +189,18 @@ const getMemberDashboardData = async (req, res, next) => {
       })
       .populate('exercises.exercise');
 
+    // Fetch individual active exercise assignments directly prescribed by coach
+    const assignedExercises = await MemberExerciseAssignment.find({
+      member: member._id,
+      status: 'active',
+    })
+      .populate({
+        path: 'trainer',
+        populate: { path: 'user', select: 'name email' },
+      })
+      .populate('exercise')
+      .sort({ createdAt: -1 });
+
     return successResponse(res, 'Member dashboard data retrieved.', {
       member,
       membership: {
@@ -200,6 +213,7 @@ const getMemberDashboardData = async (req, res, next) => {
       },
       trainer: member.assignedTrainer,
       activeTrainingPlan,
+      assignedExercises: assignedExercises || [],
     });
   } catch (error) {
     next(error);

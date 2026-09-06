@@ -34,6 +34,7 @@ export default function MemberDashboard() {
 
   const [dashboardData, setDashboardData] = useState(null);
   const [activePlan, setActivePlan] = useState(null);
+  const [assignedExercises, setAssignedExercises] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
@@ -60,6 +61,7 @@ export default function MemberDashboard() {
       const data = await dashboardApi.getMemberData();
       setDashboardData(data);
       setActivePlan(data.activeTrainingPlan || null);
+      setAssignedExercises(data.assignedExercises || []);
 
       if (data.member) {
         setProfileForm({
@@ -673,16 +675,176 @@ export default function MemberDashboard() {
                 ))}
               </div>
             </div>
-          ) : (
+          ) : null}
+
+          {/* SECTION: DIRECT MOVEMENTS PRESCRIBED BY COACH */}
+          {assignedExercises && assignedExercises.length > 0 && (
+            <div style={{ marginTop: activePlan ? '2rem' : '0' }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginBottom: '1rem',
+                  borderBottom: '1px solid var(--border-subtle)',
+                  paddingBottom: '0.5rem',
+                }}
+              >
+                <div>
+                  <h3
+                    style={{
+                      fontSize: '1.2rem',
+                      fontFamily: 'var(--font-heading)',
+                      fontWeight: 800,
+                      color: '#ffffff',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '0.45rem',
+                    }}
+                  >
+                    <Sparkles size={18} className="text-highlight" /> Direct Movements Prescribed by Coach
+                  </h3>
+                  <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+                    Individual target exercises assigned directly to you by your personal trainer.
+                  </p>
+                </div>
+                <Badge variant="secondary" size="sm">
+                  {assignedExercises.length} Prescribed
+                </Badge>
+              </div>
+
+              <div className="member-exercise-cards-grid">
+                {assignedExercises.map((item, idx) => (
+                  <div key={item._id || idx} className="member-exercise-card" style={{ borderLeft: '3px solid var(--primary)' }}>
+                    <div>
+                      <div className="member-exercise-card-header">
+                        <div>
+                          <h4 className="member-exercise-card-title">
+                            {item.exercise?.name || 'Assigned Movement'}
+                          </h4>
+                          <span
+                            style={{
+                              fontSize: '0.78rem',
+                              color: 'var(--primary)',
+                              fontWeight: 700,
+                              textTransform: 'uppercase',
+                            }}
+                          >
+                            {item.exercise?.muscleGroup} &bull; {item.exercise?.category}
+                          </span>
+                        </div>
+                        <Badge variant="outline" size="sm">
+                          {item.exercise?.equipment || 'Bodyweight'}
+                        </Badge>
+                      </div>
+
+                      <div className="member-exercise-target-grid" style={{ margin: '1rem 0' }}>
+                        <div>
+                          <span className="member-target-box-label">Sets</span>
+                          <span className="member-target-box-val">{item.sets}</span>
+                        </div>
+                        <div>
+                          <span className="member-target-box-label">Reps</span>
+                          <span className="member-target-box-val">{item.reps}</span>
+                        </div>
+                        <div>
+                          <span className="member-target-box-label">Rest</span>
+                          <span className="member-target-box-val" style={{ fontSize: '0.95rem' }}>
+                            {item.restTime}s
+                          </span>
+                        </div>
+                      </div>
+
+                      {item.targetWeight > 0 && (
+                        <div
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            padding: '0.4rem 0.75rem',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '0.85rem',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            marginBottom: '0.75rem',
+                          }}
+                        >
+                          <span style={{ color: 'var(--text-muted)' }}>Target Working Load:</span>
+                          <span style={{ fontWeight: 700, color: '#ffffff' }}>
+                            {item.targetWeight} kg / lbs
+                          </span>
+                        </div>
+                      )}
+
+                      {item.duration > 0 && (
+                        <div
+                          style={{
+                            background: 'rgba(255, 255, 255, 0.04)',
+                            padding: '0.4rem 0.75rem',
+                            borderRadius: 'var(--radius-sm)',
+                            fontSize: '0.85rem',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            marginBottom: '0.75rem',
+                          }}
+                        >
+                          <span style={{ color: 'var(--text-muted)' }}>Target Duration:</span>
+                          <span style={{ fontWeight: 700, color: '#ffffff' }}>
+                            {item.duration} seconds
+                          </span>
+                        </div>
+                      )}
+
+                      {item.instructions && (
+                        <div
+                          style={{
+                            background: 'rgba(255, 77, 0, 0.06)',
+                            border: '1px solid rgba(255, 77, 0, 0.2)',
+                            borderRadius: 'var(--radius-sm)',
+                            padding: '0.6rem 0.8rem',
+                            marginBottom: '0.75rem',
+                            fontSize: '0.85rem',
+                            color: 'var(--text-secondary)',
+                          }}
+                        >
+                          <strong style={{ color: 'var(--primary)', display: 'block', marginBottom: '0.2rem', fontSize: '0.78rem', textTransform: 'uppercase' }}>
+                            Coach Directive:
+                          </strong>
+                          &ldquo;{item.instructions}&rdquo;
+                        </div>
+                      )}
+
+                      <div
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          fontSize: '0.78rem',
+                          color: 'var(--text-muted)',
+                          borderTop: '1px solid var(--border-subtle)',
+                          paddingTop: '0.6rem',
+                          marginTop: '0.5rem',
+                        }}
+                      >
+                        <span>Prescribed by: {item.trainer?.user?.name || 'Coach'}</span>
+                        <span>{item.assignedAt ? new Date(item.assignedAt).toLocaleDateString() : 'Active'}</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Empty State when neither plan nor assigned exercises exist */}
+          {!activePlan && (!assignedExercises || assignedExercises.length === 0) && (
             <Card className="glass-panel" padding="normal">
               <div className="empty-state-box">
                 <div className="empty-state-icon">
                   <Dumbbell size={32} />
                 </div>
-                <span className="empty-state-title">No Workout Plan Assigned Yet</span>
+                <span className="empty-state-title">No Workout Plan or Movements Assigned Yet</span>
                 <p style={{ maxWidth: '480px', fontSize: '0.92rem', lineHeight: '1.6' }}>
-                  Your assigned coach will evaluate your fitness assessment and assign a custom
-                  workout plan with prescribed sets, repetitions, and rest intervals shortly.
+                  Your assigned coach will evaluate your fitness assessment and assign custom
+                  workout routines or specific movement targets with prescribed sets and repetitions shortly.
                 </p>
               </div>
             </Card>

@@ -37,6 +37,7 @@ import {
   membershipPlansApi,
   exercisesApi,
   trainingPlansApi,
+  trainerExerciseAssignmentsApi,
 } from '../../services/api';
 import './AdminDashboard.css';
 
@@ -135,6 +136,14 @@ export default function AdminDashboard() {
     instructions: '',
     status: 'active',
   });
+
+  // Assign Exercise to Trainer States
+  const [assignExerciseModalOpen, setAssignExerciseModalOpen] = useState(false);
+  const [selectedExerciseForAssign, setSelectedExerciseForAssign] = useState(null);
+  const [assignTrainerId, setAssignTrainerId] = useState('');
+  const [assignNotes, setAssignNotes] = useState('');
+  const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [assignError, setAssignError] = useState('');
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState(null); // { type, id, name }
@@ -483,6 +492,55 @@ export default function AdminDashboard() {
       alert(err.message || 'Error saving exercise');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // --- Assign Exercise to Trainer Handlers ---
+  const handleOpenAssignExercise = (exercise) => {
+    setSelectedExerciseForAssign(exercise);
+    const activeTrainers = trainers.filter((t) => t.status === 'active');
+    setAssignTrainerId(activeTrainers[0]?._id || '');
+    setAssignNotes('');
+    setAssignError('');
+    setAssignExerciseModalOpen(true);
+  };
+
+  const handleCloseAssignModal = () => {
+    setAssignExerciseModalOpen(false);
+    setSelectedExerciseForAssign(null);
+    setAssignTrainerId('');
+    setAssignNotes('');
+    setAssignError('');
+  };
+
+  const handleSubmitAssignExercise = async (e) => {
+    e.preventDefault();
+    if (!assignTrainerId) {
+      setAssignError('Please select an active trainer to assign this exercise to.');
+      return;
+    }
+    if (!selectedExerciseForAssign) return;
+
+    try {
+      setAssignSubmitting(true);
+      setAssignError('');
+      await trainerExerciseAssignmentsApi.create({
+        trainerId: assignTrainerId,
+        exerciseId: selectedExerciseForAssign._id,
+        notes: assignNotes,
+      });
+
+      const assignedTrainerObj = trainers.find((t) => t._id === assignTrainerId);
+      flashMessage(
+        `Exercise "${selectedExerciseForAssign.name}" successfully assigned to Coach ${
+          assignedTrainerObj?.user?.name || 'Trainer'
+        }!`
+      );
+      handleCloseAssignModal();
+    } catch (err) {
+      setAssignError(err.message || 'Failed to assign exercise to trainer.');
+    } finally {
+      setAssignSubmitting(false);
     }
   };
 
@@ -1105,7 +1163,22 @@ export default function AdminDashboard() {
             <div className="exercise-library-grid">
               {filteredExercises.length > 0 ? (
                 filteredExercises.map((ex) => (
-                  <div key={ex._id} className="exercise-catalog-card">
+                  <div
+                    key={ex._id}
+                    className={`exercise-catalog-card ${
+                      ex.status === 'active' ? 'interactive-exercise-card' : 'disabled-card'
+                    }`}
+                    onClick={() => {
+                      if (ex.status === 'active') {
+                        handleOpenAssignExercise(ex);
+                      }
+                    }}
+                    title={
+                      ex.status === 'active'
+                        ? 'Click card to assign exercise to coach'
+                        : 'Inactive exercise cannot be assigned'
+                    }
+                  >
                     <div>
                       <div className="exercise-catalog-header">
                         <div>
@@ -1121,11 +1194,18 @@ export default function AdminDashboard() {
                             {ex.muscleGroup} &bull; {ex.category}
                           </span>
                         </div>
-                        <span
-                          className={`exercise-tag difficulty-${ex.difficulty.toLowerCase()}`}
-                        >
-                          {ex.difficulty}
-                        </span>
+                        <div style={{ display: 'flex', gap: '0.35rem', alignItems: 'center' }}>
+                          {ex.status === 'inactive' && (
+                            <span className="exercise-tag" style={{ background: 'rgba(239, 68, 68, 0.15)', color: '#f87171' }}>
+                              Inactive
+                            </span>
+                          )}
+                          <span
+                            className={`exercise-tag difficulty-${ex.difficulty.toLowerCase()}`}
+                          >
+                            {ex.difficulty}
+                          </span>
+                        </div>
                       </div>
 
                       <p className="exercise-catalog-desc">
@@ -1147,36 +1227,53 @@ export default function AdminDashboard() {
                     <div
                       style={{
                         display: 'flex',
-                        justifyContent: 'flex-end',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
                         gap: '0.5rem',
                         borderTop: '1px solid var(--border-subtle)',
                         paddingTop: '0.75rem',
                       }}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={Edit2}
-                        onClick={() => handleOpenEditExercise(ex)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        icon={Trash2}
-                        className="btn-icon-delete"
-                        onClick={() => {
-                          setDeleteTarget({
-                            type: 'exercise',
-                            id: ex._id,
-                            name: ex.name,
-                          });
-                          setDeleteModalOpen(true);
-                        }}
-                      >
-                        Delete
-                      </Button>
+                      {ex.status === 'active' ? (
+                        <button
+                          type="button"
+                          className="btn-assign-action"
+                          onClick={() => handleOpenAssignExercise(ex)}
+                          title="Assign Exercise to Trainer"
+                        >
+                          <Sparkles size={14} />
+                          <span>Assign to Coach</span>
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Inactive</span>
+                      )}
+                      <div style={{ display: 'flex', gap: '0.4rem' }}>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={Edit2}
+                          onClick={() => handleOpenEditExercise(ex)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          icon={Trash2}
+                          className="btn-icon-delete"
+                          onClick={() => {
+                            setDeleteTarget({
+                              type: 'exercise',
+                              id: ex._id,
+                              name: ex.name,
+                            });
+                            setDeleteModalOpen(true);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 ))
@@ -2281,6 +2378,131 @@ export default function AdminDashboard() {
               </Button>
             </div>
           </div>
+        </Modal>
+
+        {/* MODAL 6: ASSIGN EXERCISE TO TRAINER */}
+        <Modal
+          isOpen={assignExerciseModalOpen}
+          onClose={handleCloseAssignModal}
+          title={selectedExerciseForAssign ? `Assign Exercise: ${selectedExerciseForAssign.name}` : 'Assign Exercise'}
+          subtitle="Assign this exercise to an active gym trainer's coaching arsenal."
+          size="md"
+        >
+          {selectedExerciseForAssign && (
+            <form onSubmit={handleSubmitAssignExercise}>
+              {/* Exercise Preview Banner */}
+              <div className="assignment-preview-box">
+                <div className="assignment-preview-header">
+                  <div className="assignment-preview-title">
+                    🏋️ {selectedExerciseForAssign.name}
+                  </div>
+                  <Badge variant="outline" size="sm">
+                    {selectedExerciseForAssign.difficulty}
+                  </Badge>
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                  <Badge variant="primary" size="sm">
+                    {selectedExerciseForAssign.muscleGroup}
+                  </Badge>
+                  <Badge variant="secondary" size="sm">
+                    {selectedExerciseForAssign.category}
+                  </Badge>
+                  <span className="exercise-tag">
+                    Equipment: {selectedExerciseForAssign.equipment}
+                  </span>
+                  <span className="exercise-tag">
+                    Defaults: {selectedExerciseForAssign.defaultSets} sets &times; {selectedExerciseForAssign.defaultReps} reps
+                  </span>
+                </div>
+                {selectedExerciseForAssign.description && (
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                    {selectedExerciseForAssign.description}
+                  </p>
+                )}
+              </div>
+
+              {/* Error Message */}
+              {assignError && (
+                <div className="assignment-error-banner">
+                  <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                  <span>{assignError}</span>
+                </div>
+              )}
+
+              {/* Form Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div className="form-field">
+                  <label className="field-label">Assign To Trainer *</label>
+                  <select
+                    className="field-select"
+                    required
+                    value={assignTrainerId}
+                    onChange={(e) => {
+                      setAssignTrainerId(e.target.value);
+                      setAssignError('');
+                    }}
+                  >
+                    <option value="">-- Select Active Trainer --</option>
+                    {trainers
+                      .filter((t) => t.status === 'active')
+                      .map((t) => (
+                        <option key={t._id} value={t._id}>
+                          {t.user?.name || 'Coach'} ({t.specialization || 'Personal Trainer'})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+
+                {/* Selected Trainer Preview */}
+                {assignTrainerId && (() => {
+                  const currentTrainer = trainers.find((t) => t._id === assignTrainerId);
+                  if (!currentTrainer) return null;
+                  return (
+                    <div className="assignment-trainer-preview">
+                      <div style={{ fontWeight: 700, color: '#ffffff', marginBottom: '0.25rem' }}>
+                        Coach: {currentTrainer.user?.name}
+                      </div>
+                      <div style={{ color: 'var(--primary)', fontSize: '0.82rem', fontWeight: 600 }}>
+                        {currentTrainer.specialization} &bull; {currentTrainer.experience} Experience
+                      </div>
+                      {currentTrainer.certifications && (
+                        <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginTop: '0.2rem' }}>
+                          Certifications: {currentTrainer.certifications}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                <div className="form-field">
+                  <label className="field-label">Coaching Directives / Notes (Optional)</label>
+                  <textarea
+                    className="field-textarea"
+                    rows={3}
+                    placeholder="e.g. Focus on progressive overload protocols for this movement..."
+                    value={assignNotes}
+                    onChange={(e) => setAssignNotes(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="modal-actions-row">
+                <Button variant="ghost" size="md" onClick={handleCloseAssignModal} disabled={assignSubmitting}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  disabled={assignSubmitting || !assignTrainerId}
+                  icon={Sparkles}
+                >
+                  {assignSubmitting ? 'Assigning Exercise...' : 'Assign Exercise to Coach'}
+                </Button>
+              </div>
+            </form>
+          )}
         </Modal>
       </div>
     </div>

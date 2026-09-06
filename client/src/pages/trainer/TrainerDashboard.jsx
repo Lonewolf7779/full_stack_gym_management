@@ -28,7 +28,7 @@ import Button from '../../components/common/Button';
 import Card from '../../components/common/Card';
 import Badge from '../../components/common/Badge';
 import Modal from '../../components/common/Modal';
-import { dashboardApi, trainingPlansApi, exercisesApi } from '../../services/api';
+import { dashboardApi, trainingPlansApi, exercisesApi, memberExerciseAssignmentsApi } from '../../services/api';
 import './TrainerDashboard.css';
 import '../admin/AdminDashboard.css';
 
@@ -72,6 +72,19 @@ export default function TrainerDashboard() {
     status: 'active',
     exercises: [],
   });
+
+  // Assign Exercise to Athlete Modal States
+  const [assignExerciseModalOpen, setAssignExerciseModalOpen] = useState(false);
+  const [selectedExerciseForAssign, setSelectedExerciseForAssign] = useState(null);
+  const [assignMemberId, setAssignMemberId] = useState('');
+  const [assignSets, setAssignSets] = useState(3);
+  const [assignReps, setAssignReps] = useState(10);
+  const [assignDuration, setAssignDuration] = useState(0);
+  const [assignRestTime, setAssignRestTime] = useState(60);
+  const [assignTargetWeight, setAssignTargetWeight] = useState(0);
+  const [assignInstructions, setAssignInstructions] = useState('');
+  const [assignSubmitting, setAssignSubmitting] = useState(false);
+  const [assignError, setAssignError] = useState('');
 
   const [deleteModalOpen, setDeleteModalOpen] = useState(false);
   const [deleteTargetPlan, setDeleteTargetPlan] = useState(null);
@@ -286,6 +299,65 @@ export default function TrainerDashboard() {
       alert(err.message || 'Error deleting plan');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  // --- Assign Exercise to Member Handlers ---
+  const handleOpenAssignExercise = (exercise) => {
+    setSelectedExerciseForAssign(exercise);
+    setAssignMemberId(assignedMembers[0]?._id || '');
+    setAssignSets(exercise.defaultSets !== undefined ? exercise.defaultSets : 3);
+    setAssignReps(exercise.defaultReps !== undefined ? exercise.defaultReps : 10);
+    setAssignDuration(exercise.defaultDuration !== undefined ? exercise.defaultDuration : 0);
+    setAssignRestTime(exercise.defaultRestTime !== undefined ? exercise.defaultRestTime : 60);
+    setAssignTargetWeight(0);
+    setAssignInstructions('');
+    setAssignError('');
+    setAssignExerciseModalOpen(true);
+  };
+
+  const handleCloseAssignModal = () => {
+    setAssignExerciseModalOpen(false);
+    setSelectedExerciseForAssign(null);
+    setAssignMemberId('');
+    setAssignError('');
+    setAssignInstructions('');
+  };
+
+  const handleSubmitAssignExercise = async (e) => {
+    e.preventDefault();
+    if (!assignMemberId) {
+      setAssignError('Please select an athlete from your roster to assign this exercise.');
+      return;
+    }
+    if (!selectedExerciseForAssign) return;
+
+    try {
+      setAssignSubmitting(true);
+      setAssignError('');
+
+      await memberExerciseAssignmentsApi.create({
+        memberId: assignMemberId,
+        exerciseId: selectedExerciseForAssign._id,
+        sets: Number(assignSets),
+        reps: Number(assignReps),
+        duration: Number(assignDuration),
+        restTime: Number(assignRestTime),
+        targetWeight: Number(assignTargetWeight),
+        instructions: assignInstructions,
+      });
+
+      const memberObj = assignedMembers.find((m) => m._id === assignMemberId);
+      flashMessage(
+        `Exercise "${selectedExerciseForAssign.name}" successfully assigned to ${
+          memberObj?.user?.name || 'Athlete'
+        }!`
+      );
+      handleCloseAssignModal();
+    } catch (err) {
+      setAssignError(err.message || 'Failed to assign exercise to athlete.');
+    } finally {
+      setAssignSubmitting(false);
     }
   };
 
@@ -712,7 +784,22 @@ export default function TrainerDashboard() {
             <div className="exercise-library-grid">
               {filteredExercises.length > 0 ? (
                 filteredExercises.map((ex) => (
-                  <div key={ex._id} className="exercise-catalog-card">
+                  <div
+                    key={ex._id}
+                    className={`exercise-catalog-card ${
+                      ex.status === 'active' ? 'interactive-exercise-card' : 'disabled-card'
+                    }`}
+                    onClick={() => {
+                      if (ex.status === 'active') {
+                        handleOpenAssignExercise(ex);
+                      }
+                    }}
+                    title={
+                      ex.status === 'active'
+                        ? 'Click card to assign exercise to an athlete'
+                        : 'Inactive exercise cannot be assigned'
+                    }
+                  >
                     <div>
                       <div className="exercise-catalog-header">
                         <div>
@@ -772,6 +859,36 @@ export default function TrainerDashboard() {
                           </ul>
                         </div>
                       )}
+                    </div>
+
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        gap: '0.5rem',
+                        borderTop: '1px solid var(--border-subtle)',
+                        paddingTop: '0.75rem',
+                        marginTop: '0.75rem',
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {ex.status === 'active' ? (
+                        <button
+                          type="button"
+                          className="btn-assign-action"
+                          onClick={() => handleOpenAssignExercise(ex)}
+                          title="Assign Exercise to Member"
+                        >
+                          <Sparkles size={14} />
+                          <span>Assign to Athlete</span>
+                        </button>
+                      ) : (
+                        <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>Inactive</span>
+                      )}
+                      <Badge variant="outline" size="sm">
+                        {ex.category}
+                      </Badge>
                     </div>
                   </div>
                 ))
@@ -1214,6 +1331,192 @@ export default function TrainerDashboard() {
               </Button>
             </div>
           </div>
+        </Modal>
+
+        {/* MODAL: ASSIGN EXERCISE TO ATHLETE */}
+        <Modal
+          isOpen={assignExerciseModalOpen}
+          onClose={handleCloseAssignModal}
+          title={
+            selectedExerciseForAssign
+              ? `Prescribe Movement: ${selectedExerciseForAssign.name}`
+              : 'Prescribe Exercise'
+          }
+          subtitle="Assign this exercise with custom sets, reps, and targets to an athlete on your roster."
+          size="md"
+        >
+          {selectedExerciseForAssign && (
+            <form onSubmit={handleSubmitAssignExercise}>
+              {/* Exercise Preview Banner */}
+              <div className="assignment-preview-box">
+                <div className="assignment-preview-header">
+                  <div className="assignment-preview-title">
+                    🏋️ {selectedExerciseForAssign.name}
+                  </div>
+                  <Badge variant="outline" size="sm">
+                    {selectedExerciseForAssign.difficulty}
+                  </Badge>
+                </div>
+                <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap', marginBottom: '0.5rem' }}>
+                  <Badge variant="primary" size="sm">
+                    {selectedExerciseForAssign.muscleGroup}
+                  </Badge>
+                  <Badge variant="secondary" size="sm">
+                    {selectedExerciseForAssign.category}
+                  </Badge>
+                  <span className="exercise-tag">
+                    Equipment: {selectedExerciseForAssign.equipment}
+                  </span>
+                </div>
+                {selectedExerciseForAssign.description && (
+                  <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', margin: 0 }}>
+                    {selectedExerciseForAssign.description}
+                  </p>
+                )}
+              </div>
+
+              {/* Error Message */}
+              {assignError && (
+                <div className="assignment-error-banner">
+                  <AlertCircle size={18} style={{ flexShrink: 0 }} />
+                  <span>{assignError}</span>
+                </div>
+              )}
+
+              {/* Form Controls */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', marginBottom: '1.5rem' }}>
+                <div className="form-field">
+                  <label className="field-label">Select Coached Athlete *</label>
+                  {assignedMembers.length > 0 ? (
+                    <select
+                      className="field-select"
+                      required
+                      value={assignMemberId}
+                      onChange={(e) => {
+                        setAssignMemberId(e.target.value);
+                        setAssignError('');
+                      }}
+                    >
+                      <option value="">-- Choose Athlete --</option>
+                      {assignedMembers.map((m) => (
+                        <option key={m._id} value={m._id}>
+                          {m.user?.name || 'Athlete'} ({m.membershipPlan?.name || 'Active Member'})
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '0.75rem',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                        borderRadius: 'var(--radius-md)',
+                        fontSize: '0.85rem',
+                        color: '#fca5a5',
+                      }}
+                    >
+                      You currently have no athletes assigned to your coaching roster.
+                    </div>
+                  )}
+                </div>
+
+                {/* Prescription Parameters Grid */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))',
+                    gap: '0.75rem',
+                  }}
+                >
+                  <div className="form-field">
+                    <label className="field-label">Working Sets *</label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      className="field-input"
+                      value={assignSets}
+                      onChange={(e) => setAssignSets(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-field">
+                    <label className="field-label">Target Reps *</label>
+                    <input
+                      type="number"
+                      min="0"
+                      required
+                      className="field-input"
+                      value={assignReps}
+                      onChange={(e) => setAssignReps(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-field">
+                    <label className="field-label">Target Weight (kg/lbs)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="field-input"
+                      placeholder="0"
+                      value={assignTargetWeight}
+                      onChange={(e) => setAssignTargetWeight(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-field">
+                    <label className="field-label">Rest (sec)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="field-input"
+                      value={assignRestTime}
+                      onChange={(e) => setAssignRestTime(e.target.value)}
+                    />
+                  </div>
+
+                  <div className="form-field">
+                    <label className="field-label">Duration (sec)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      className="field-input"
+                      placeholder="0"
+                      value={assignDuration}
+                      onChange={(e) => setAssignDuration(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                <div className="form-field">
+                  <label className="field-label">Coach Form Cues & Guidance</label>
+                  <textarea
+                    className="field-textarea"
+                    rows={3}
+                    placeholder="e.g. Keep chest high, explosive ascent with a 2-second hold at the peak..."
+                    value={assignInstructions}
+                    onChange={(e) => setAssignInstructions(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="modal-actions-row">
+                <Button variant="ghost" size="md" onClick={handleCloseAssignModal} disabled={assignSubmitting}>
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  variant="primary"
+                  size="md"
+                  disabled={assignSubmitting || !assignMemberId || assignedMembers.length === 0}
+                  icon={Sparkles}
+                >
+                  {assignSubmitting ? 'Prescribing...' : 'Prescribe to Athlete'}
+                </Button>
+              </div>
+            </form>
+          )}
         </Modal>
       </div>
     </div>

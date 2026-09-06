@@ -534,3 +534,106 @@ export const trainingPlansApi = {
     return data;
   },
 };
+
+/**
+ * Trainer Exercise Assignments API methods (Admin assigning to Coach)
+ */
+export const trainerExerciseAssignmentsApi = {
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.trainerId) query.append('trainerId', params.trainerId);
+    if (params.exerciseId) query.append('exerciseId', params.exerciseId);
+    if (params.status) query.append('status', params.status);
+
+    const response = await fetch(`${API_BASE_URL}/trainer-exercise-assignments?${query.toString()}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch trainer exercise assignments');
+    return data.data?.assignments || [];
+  },
+
+  create: async ({ trainerId, exerciseId, notes }) => {
+    const response = await fetch(`${API_BASE_URL}/trainer-exercise-assignments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ trainerId, exerciseId, notes }),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to assign exercise to trainer');
+    return data.data?.assignment;
+  },
+
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/trainer-exercise-assignments/${id}`, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete assignment');
+    return data;
+  },
+};
+
+/**
+ * Member Exercise Assignments API methods (Coach assigning to Athlete)
+ */
+export const memberExerciseAssignmentsApi = {
+  getAll: async (params = {}) => {
+    const query = new URLSearchParams();
+    if (params.memberId) query.append('memberId', params.memberId);
+    if (params.exerciseId) query.append('exerciseId', params.exerciseId);
+    if (params.status) query.append('status', params.status);
+
+    const response = await fetch(`${API_BASE_URL}/member-exercise-assignments?${query.toString()}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch member exercise assignments');
+    return data.data?.assignments || [];
+  },
+
+  getByMemberId: async (memberId) => {
+    const response = await fetch(`${API_BASE_URL}/member-exercise-assignments/member/${memberId}`, {
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to fetch member assigned exercises');
+    return data.data?.assignments || [];
+  },
+
+  create: async (assignmentData) => {
+    const response = await fetch(`${API_BASE_URL}/member-exercise-assignments`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify(assignmentData),
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to assign exercise to member');
+    return data.data?.assignment;
+  },
+
+  delete: async (id) => {
+    const response = await fetch(`${API_BASE_URL}/member-exercise-assignments/${id}`, {
+      method: 'DELETE',
+      headers: { 'Accept': 'application/json' },
+      credentials: 'include',
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.message || 'Failed to delete assignment');
+    return data;
+  },
+};
+
