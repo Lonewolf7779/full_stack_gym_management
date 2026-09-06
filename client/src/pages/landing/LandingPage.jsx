@@ -9,10 +9,10 @@ import TestimonialsSection from './sections/TestimonialsSection';
 import CtaSection from './sections/CtaSection';
 import './LandingPage.css';
 
-export default function LandingPage({ serverStatus }) {
+export default function LandingPage() {
   return (
     <main className="landing-page-main">
-      <HeroSection serverStatus={serverStatus} />
+      <HeroSection />
       <AboutSection />
       <FeaturesSection />
       <MembershipsSection />

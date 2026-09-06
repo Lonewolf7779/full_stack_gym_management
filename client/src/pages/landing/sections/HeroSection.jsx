@@ -3,7 +3,7 @@ import { ArrowRight, Flame, Shield, Award, Users, CheckCircle2, Zap } from 'luci
 import Button from '../../../components/common/Button';
 import Badge from '../../../components/common/Badge';
 
-export default function HeroSection({ serverStatus }) {
+export default function HeroSection() {
   const scrollTo = (id) => {
     const el = document.getElementById(id);
     if (el) el.scrollIntoView({ behavior: 'smooth' });

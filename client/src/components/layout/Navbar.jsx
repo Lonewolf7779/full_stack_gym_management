@@ -7,7 +7,7 @@ import Button from '../common/Button';
 import Badge from '../common/Badge';
 import './Navbar.css';
 
-export default function Navbar({ serverStatus }) {
+export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeSection, setActiveSection] = useState('home');
@@ -23,6 +23,22 @@ export default function Navbar({ serverStatus }) {
   const notificationsRef = useRef(null);
 
   const isHomePage = location.pathname === '/';
+
+  // Close mobile menu on Escape key press
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && mobileMenuOpen) {
+        setMobileMenuOpen(false);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [mobileMenuOpen]);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
 
   // Fetch unread notification count
   const loadUnreadCount = async () => {
@@ -265,17 +281,8 @@ export default function Navbar({ serverStatus }) {
           </ul>
         </nav>
 
-        {/* Server Status & CTA Actions */}
+        {/* Action Controls */}
         <div className="navbar-actions">
-          {/* Backend Status Indicator */}
-          <div
-            className={`server-indicator ${serverStatus?.online ? 'status-online' : 'status-offline'}`}
-            title={`Backend API: ${serverStatus?.online ? 'Connected' : 'Connecting'}`}
-          >
-            <span className="status-dot"></span>
-            <span className="status-text">{serverStatus?.online ? 'API Live' : 'API Connecting'}</span>
-          </div>
-
           {isAuthenticated ? (
             /* Authenticated User Actions */
             <div className="navbar-user-group">
@@ -441,9 +448,11 @@ export default function Navbar({ serverStatus }) {
 
           {/* Mobile Hamburger Button */}
           <button
+            type="button"
             className="mobile-toggle"
-            onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-            aria-label="Toggle navigation menu"
+            onClick={() => setMobileMenuOpen((prev) => !prev)}
+            aria-label={mobileMenuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            aria-expanded={mobileMenuOpen}
           >
             {mobileMenuOpen ? <X size={26} /> : <Menu size={26} />}
           </button>
@@ -455,22 +464,58 @@ export default function Navbar({ serverStatus }) {
         <div className="mobile-drawer-content">
           <ul className="mobile-nav-links">
             <li>
-              <button onClick={() => scrollToSection('home')}>Home</button>
+              <button
+                type="button"
+                className={`mobile-nav-item ${activeSection === 'home' && isHomePage ? 'active' : ''}`}
+                onClick={() => scrollToSection('home')}
+              >
+                Home
+              </button>
             </li>
             <li>
-              <button onClick={() => scrollToSection('about')}>About Us</button>
+              <button
+                type="button"
+                className={`mobile-nav-item ${activeSection === 'about' && isHomePage ? 'active' : ''}`}
+                onClick={() => scrollToSection('about')}
+              >
+                About
+              </button>
             </li>
             <li>
-              <button onClick={() => scrollToSection('features')}>Features & Benefits</button>
+              <button
+                type="button"
+                className={`mobile-nav-item ${activeSection === 'features' && isHomePage ? 'active' : ''}`}
+                onClick={() => scrollToSection('features')}
+              >
+                Features
+              </button>
             </li>
             <li>
-              <button onClick={() => scrollToSection('memberships')}>Membership Plans</button>
+              <button
+                type="button"
+                className={`mobile-nav-item ${activeSection === 'memberships' && isHomePage ? 'active' : ''}`}
+                onClick={() => scrollToSection('memberships')}
+              >
+                Plans
+              </button>
             </li>
             <li>
-              <button onClick={() => scrollToSection('trainers')}>Expert Coaches</button>
+              <button
+                type="button"
+                className={`mobile-nav-item ${activeSection === 'trainers' && isHomePage ? 'active' : ''}`}
+                onClick={() => scrollToSection('trainers')}
+              >
+                Coaches
+              </button>
             </li>
             <li>
-              <button onClick={() => scrollToSection('why-us')}>Why Choose IronForge</button>
+              <button
+                type="button"
+                className={`mobile-nav-item ${activeSection === 'why-us' && isHomePage ? 'active' : ''}`}
+                onClick={() => scrollToSection('why-us')}
+              >
+                Why Us
+              </button>
             </li>
           </ul>
 
@@ -490,12 +535,12 @@ export default function Navbar({ serverStatus }) {
               <>
                 <Link to="/login" onClick={() => setMobileMenuOpen(false)}>
                   <Button variant="outline" fullWidth size="md" icon={User}>
-                    Member / Staff Sign In
+                    Sign In
                   </Button>
                 </Link>
                 <Link to="/register" onClick={() => setMobileMenuOpen(false)}>
                   <Button variant="primary" fullWidth size="md" icon={Sparkles}>
-                    Create Member Account
+                    Join Now
                   </Button>
                 </Link>
               </>
