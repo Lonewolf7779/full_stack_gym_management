@@ -33,7 +33,7 @@ jobs:
           output_location: "dist" # Built app content directory - optional
           ###### End of Repository/Build Configurations ######
         env:
-          VITE_API_URL: https://ironforge-gym-website-hgfjduajdcdfgv2.centralindia-01.azurewebsites.net/api
+          VITE_API_URL: https://ironforge-gym-website-hgfjduajdcdfgvh2.centralindia-01.azurewebsites.net/api
 
   close_pull_request_job:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
