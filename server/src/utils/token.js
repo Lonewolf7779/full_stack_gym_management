@@ -27,7 +27,7 @@ const getCookieOptions = () => {
   return {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'lax',
+    sameSite: isProduction ? 'none' : 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in milliseconds
     path: '/',
   };
@@ -58,12 +58,13 @@ const sendTokenCookie = (res, user, statusCode = 200, message = 'Success') => {
  * Clear the authentication cookie upon logout
  */
 const clearTokenCookie = (res) => {
+  const isProduction = process.env.NODE_ENV === 'production';
   res.cookie('token', '', {
     httpOnly: true,
     expires: new Date(0),
     path: '/',
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: isProduction ? 'none' : 'lax',
+    secure: isProduction,
   });
 };
 
