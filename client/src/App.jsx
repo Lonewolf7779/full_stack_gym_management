@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Navbar from './components/layout/Navbar';
 import Footer from './components/layout/Footer';
@@ -10,6 +10,17 @@ import ProtectedRoute from './components/auth/ProtectedRoute';
 import AdminDashboard from './pages/admin/AdminDashboard';
 import TrainerDashboard from './pages/trainer/TrainerDashboard';
 import MemberDashboard from './pages/member/MemberDashboard';
+
+// Automatically scroll window to top on route navigation
+function ScrollToTop() {
+  const { pathname } = useLocation();
+
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [pathname]);
+
+  return null;
+}
 
 // Redirect authenticated users away from Login/Register to their respective dashboard
 function PublicAuthRoute({ children }) {
@@ -29,6 +40,7 @@ function PublicAuthRoute({ children }) {
 function MainApp() {
   return (
     <div className="app-layout">
+      <ScrollToTop />
       <Navbar />
       <Routes>
         {/* Public Landing Page */}

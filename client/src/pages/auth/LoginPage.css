@@ -1,23 +1,32 @@
 /* Auth Pages Styles */
 
 .auth-page {
-  min-height: 100vh;
+  flex: 1 0 auto;
+  min-height: calc(100vh - var(--nav-height));
+  min-height: calc(100dvh - var(--nav-height));
   display: flex;
   align-items: center;
   justify-content: center;
   padding: calc(var(--nav-height) + var(--space-xl)) var(--space-md) var(--space-2xl) var(--space-md);
   position: relative;
   overflow: hidden;
+  width: 100%;
 }
 
+.auth-page .auth-container,
 .auth-container {
   display: flex;
   justify-content: center;
   position: relative;
   z-index: 1;
+  width: 100%;
+  max-width: 480px;
+  padding-left: 0;
+  padding-right: 0;
 }
 
-.auth-card {
+.auth-card,
+.auth-card.gym-card {
   max-width: 480px;
   width: 100%;
   border-radius: var(--radius-xl);
@@ -250,4 +259,110 @@
 
 .auth-link:hover {
   color: var(--primary-hover);
+}
+
+/* ==========================================================================
+   Responsive Layout Polish for Auth Pages (Mobile & Tablet)
+   ========================================================================== */
+
+@media (max-width: 768px) {
+  .auth-page {
+    padding-top: calc(var(--nav-height) + 1.5rem);
+    padding-bottom: 2.5rem;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .auth-page .auth-container,
+  .auth-container {
+    padding-left: 0;
+    padding-right: 0;
+  }
+}
+
+@media (max-width: 540px) {
+  .auth-page {
+    padding-top: calc(var(--nav-height) + 1.25rem);
+    padding-bottom: 2rem;
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .auth-page .auth-container,
+  .auth-container {
+    width: 100%;
+    max-width: 100%;
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .auth-card,
+  .auth-card.gym-card,
+  .auth-card.gym-card-pad-lg {
+    width: 100%;
+    max-width: 100%;
+    padding: 1.75rem 1.35rem;
+    border-radius: var(--radius-lg);
+  }
+
+  .auth-header {
+    margin-bottom: 1.25rem;
+  }
+
+  .auth-logo {
+    margin-bottom: 0.85rem;
+  }
+
+  .auth-title {
+    font-size: 1.55rem;
+  }
+
+  .auth-subtitle {
+    font-size: 0.88rem;
+  }
+
+  .auth-form {
+    gap: 1rem;
+  }
+
+  .form-input {
+    padding: 0.75rem 0.85rem 0.75rem 2.4rem;
+  }
+
+  .demo-accounts-box {
+    margin-top: 1.25rem;
+    padding-top: 1rem;
+  }
+
+  .demo-buttons-grid {
+    gap: 0.4rem;
+  }
+
+  .demo-btn {
+    padding: 0.45rem 0.35rem;
+    font-size: 0.75rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .auth-page {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .auth-card,
+  .auth-card.gym-card,
+  .auth-card.gym-card-pad-lg {
+    padding: 1.25rem 0.85rem;
+    border-radius: var(--radius-md);
+  }
+
+  .auth-title {
+    font-size: 1.35rem;
+  }
+
+  .demo-buttons-grid {
+    grid-template-columns: 1fr;
+    gap: 0.35rem;
+  }
 }

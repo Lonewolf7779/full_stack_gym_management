@@ -2,6 +2,14 @@
 @import './reset.css';
 @import './typography.css';
 
+/* App Shell Layout */
+.app-layout {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
+
 /* Layout Container */
 .container {
   width: 100%;
