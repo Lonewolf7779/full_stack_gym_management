@@ -3,6 +3,7 @@ const {
   getPaymentConfig,
   createRazorpayOrder,
   verifyPayment,
+  confirmUpiQrPayment,
   handleWebhook,
   recordManualPayment,
   getMyPayments,
@@ -27,6 +28,7 @@ router.use(protect);
 router.post('/create-order', authorize('member', 'admin'), createRazorpayOrder);
 router.post('/verify', authorize('member', 'admin'), verifyPayment);
 router.post('/verify-payment', authorize('member', 'admin'), verifyPayment);
+router.post('/confirm-upi-qr', authorize('member', 'admin'), confirmUpiQrPayment);
 
 // Member payment history
 router.get('/my-payments', authorize('member'), getMyPayments);

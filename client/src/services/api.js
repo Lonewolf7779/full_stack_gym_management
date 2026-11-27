@@ -858,7 +858,7 @@ export const paymentsApi = {
     return data.data;
   },
 
-  createOrder: async ({ planId, memberId }) => {
+  createOrder: async ({ planId, memberId, preferredMethod }) => {
     const response = await fetch(`${API_BASE_URL}/payments/create-order`, {
       method: 'POST',
       headers: {
@@ -866,14 +866,14 @@ export const paymentsApi = {
         'Accept': 'application/json',
       },
       credentials: 'include',
-      body: JSON.stringify({ planId, memberId }),
+      body: JSON.stringify({ planId, memberId, preferredMethod }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || 'Failed to create payment order');
     return data.data;
   },
 
-  verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature }) => {
+  verifyPayment: async ({ razorpay_order_id, razorpay_payment_id, razorpay_signature, selected_method }) => {
     const response = await fetch(`${API_BASE_URL}/payments/verify-payment`, {
       method: 'POST',
       headers: {
@@ -885,10 +885,30 @@ export const paymentsApi = {
         razorpay_order_id,
         razorpay_payment_id,
         razorpay_signature,
+        selected_method,
       }),
     });
     const data = await response.json();
     if (!response.ok) throw new Error(data.message || 'Payment signature verification failed');
+    return data.data;
+  },
+
+  confirmUpiQr: async ({ orderId, upiId, utrNumber }) => {
+    const response = await fetch(`${API_BASE_URL}/payments/confirm-upi-qr`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ orderId, upiId, utrNumber }),
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const err = new Error(data.message || 'UPI QR payment confirmation failed');
+      err.status = response.status;
+      throw err;
+    }
     return data.data;
   },
 

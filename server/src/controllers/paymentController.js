@@ -151,7 +151,7 @@ const getPaymentConfig = async (req, res) => {
  */
 const createRazorpayOrder = async (req, res) => {
   try {
-    const { planId, memberId } = req.body;
+    const { planId, memberId, preferredMethod } = req.body;
 
     // Gating check: User must be active
     if (req.user.status === 'inactive') {
@@ -210,6 +210,9 @@ const createRazorpayOrder = async (req, res) => {
       },
     });
 
+    const allowedOnlineMethods = ['credit_card', 'debit_card', 'upi'];
+    const initialMethod = allowedOnlineMethods.includes(preferredMethod) ? preferredMethod : 'razorpay';
+
     // Create Pending Payment record in Database
     const isRenewal = Boolean(member.membershipPlan);
     const payment = await Payment.create({
@@ -217,14 +220,15 @@ const createRazorpayOrder = async (req, res) => {
       membershipPlan: plan._id,
       amount: authoritativeAmount,
       currency: 'INR',
-      paymentMethod: 'razorpay',
+      paymentMethod: initialMethod,
       status: 'pending',
       purpose: isRenewal ? 'renewal' : 'membership',
       razorpayOrderId: rzpOrder.id,
       receiptNumber,
       paymentDate: new Date(),
-      notes: `Online checkout order created for ${plan.name} ($${authoritativeAmount})`,
+      notes: `Online checkout order created for ${plan.name} (₹${authoritativeAmount})`,
       recordedBy: req.user._id,
+      metadata: preferredMethod ? { preferredMethod } : {},
     });
 
     return successResponse(
@@ -259,7 +263,7 @@ const createRazorpayOrder = async (req, res) => {
  */
 const verifyPayment = async (req, res) => {
   try {
-    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature, selected_method } = req.body;
 
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return errorResponse(
@@ -327,6 +331,10 @@ const verifyPayment = async (req, res) => {
     }
 
     // Mark payment as paid
+    const allowedOnlineMethods = ['credit_card', 'debit_card', 'upi'];
+    if (allowedOnlineMethods.includes(selected_method)) {
+      payment.paymentMethod = selected_method;
+    }
     payment.status = 'paid';
     payment.paidAt = new Date();
     payment.razorpayPaymentId = razorpay_payment_id;
@@ -344,6 +352,102 @@ const verifyPayment = async (req, res) => {
     });
   } catch (error) {
     return errorResponse(res, 'Error verifying payment signature', error, 500);
+  }
+};
+
+/**
+ * @route   POST /api/payments/confirm-upi-qr
+ * @desc    Confirm UPI / QR payment for a pending authoritative order & fulfill membership
+ * @access  Protected (Member / Admin)
+ */
+const confirmUpiQrPayment = async (req, res) => {
+  try {
+    const { orderId, upiId, utrNumber } = req.body;
+
+    if (req.user.status === 'inactive') {
+      return errorResponse(res, 'Your account is inactive. Payment confirmation is disabled.', null, 403);
+    }
+
+    if (!orderId || typeof orderId !== 'string') {
+      return errorResponse(res, 'Valid Order ID is required to confirm UPI QR payment.', null, 400);
+    }
+
+    const payment = await Payment.findOne({ razorpayOrderId: orderId.trim() });
+    if (!payment) {
+      return errorResponse(res, 'Pending payment order not found.', null, 404);
+    }
+
+    // Strict ownership verification for members
+    if (req.user.role === 'member') {
+      const member = await Member.findOne({ user: req.user._id });
+      if (!member || payment.member.toString() !== member._id.toString()) {
+        return errorResponse(res, 'Unauthorized to confirm payment belonging to another athlete.', null, 403);
+      }
+    }
+
+    const normalizedUpiId = typeof upiId === 'string' && upiId.trim() ? upiId.trim().toLowerCase() : 'success@razorpay';
+    if (normalizedUpiId === 'failure@razorpay') {
+      payment.status = 'failed';
+      payment.paymentMethod = 'upi';
+      payment.notes = `Simulated failed UPI payment (${normalizedUpiId}) at ${new Date().toISOString()}`;
+      await payment.save();
+      return errorResponse(res, 'UPI payment declined by test handle (failure@razorpay).', null, 400);
+    }
+
+    if (!/^[\w.-]+@[\w.-]+$/.test(normalizedUpiId)) {
+      return errorResponse(res, 'Please enter a valid UPI ID (for example, name@upi or success@razorpay).', null, 400);
+    }
+
+    const cleanedUtr = typeof utrNumber === 'string' && utrNumber.trim() ? utrNumber.trim() : null;
+    if (cleanedUtr && !/^[A-Za-z0-9_-]{6,32}$/.test(cleanedUtr)) {
+      return errorResponse(res, 'UTR / Transaction Reference must be 6–32 alphanumeric characters.', null, 400);
+    }
+
+    // Idempotency guard
+    if (payment.status === 'paid') {
+      const currentMember = await Member.findById(payment.member).populate('membershipPlan');
+      return successResponse(res, 'UPI QR payment has already been verified and processed', {
+        payment: payment.toReceiptJSON(),
+        member: currentMember,
+        alreadyProcessed: true,
+      });
+    }
+
+    const generatedTxId = cleanedUtr ? `upi_utr_${cleanedUtr}` : `upi_qr_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
+
+    const duplicateTx = await Payment.findOne({
+      razorpayPaymentId: generatedTxId,
+      _id: { $ne: payment._id },
+      status: 'paid',
+    });
+    if (duplicateTx) {
+      return errorResponse(res, 'This UPI transaction / UTR reference has already been credited to another order.', null, 400);
+    }
+
+    payment.paymentMethod = 'upi';
+    payment.status = 'paid';
+    payment.paidAt = new Date();
+    payment.razorpayPaymentId = generatedTxId;
+    payment.metadata = {
+      ...(payment.metadata || {}),
+      flow: 'upi_qr',
+      upiId: normalizedUpiId,
+      ...(cleanedUtr ? { utrNumber: cleanedUtr } : {}),
+    };
+    payment.notes =
+      (payment.notes ? payment.notes + ' | ' : '') +
+      `Verified via UPI QR (${normalizedUpiId}${cleanedUtr ? `, UTR: ${cleanedUtr}` : ''})`;
+    await payment.save();
+
+    const updatedMember = await fulfillMembership(payment);
+    const populatedMember = await Member.findById(updatedMember._id).populate('membershipPlan');
+
+    return successResponse(res, 'UPI / QR payment verified! Membership activated.', {
+      payment: payment.toReceiptJSON(),
+      member: populatedMember,
+    });
+  } catch (error) {
+    return errorResponse(res, 'Error confirming UPI QR payment', error, 500);
   }
 };
 
@@ -481,7 +585,7 @@ const recordManualPayment = async (req, res) => {
       return errorResponse(res, 'Payment amount is required and must be a positive number', null, 400);
     }
 
-    const validMethods = ['cash', 'upi', 'card', 'bank_transfer', 'other'];
+    const validMethods = ['cash', 'upi', 'card', 'credit_card', 'debit_card', 'bank_transfer', 'other'];
     if (paymentMethod && !validMethods.includes(paymentMethod)) {
       return errorResponse(res, `Invalid payment method '${paymentMethod}'. Supported methods: ${validMethods.join(', ')}`, null, 400);
     }
@@ -821,6 +925,7 @@ module.exports = {
   getPaymentConfig,
   createRazorpayOrder,
   verifyPayment,
+  confirmUpiQrPayment,
   handleWebhook,
   recordManualPayment,
   getMyPayments,

@@ -49,8 +49,30 @@ import {
   paymentsApi,
   progressApi,
 } from '../../services/api';
+import { generateQrMatrix } from '../../utils/upiQrSvg';
 import './MemberDashboard.css';
 import '../admin/AdminDashboard.css';
+
+const formatPaymentMethodLabel = (method) => {
+  switch (method) {
+    case 'credit_card':
+      return 'Credit Card';
+    case 'debit_card':
+      return 'Debit Card';
+    case 'upi':
+      return 'QR / UPI';
+    case 'card':
+      return 'Card (POS)';
+    case 'cash':
+      return 'Cash';
+    case 'bank_transfer':
+      return 'Bank Transfer';
+    case 'razorpay':
+      return 'Razorpay';
+    default:
+      return method || 'Online';
+  }
+};
 
 export default function MemberDashboard() {
   const { user } = useAuth();
@@ -90,6 +112,10 @@ export default function MemberDashboard() {
   const [availablePlans, setAvailablePlans] = useState([]);
   const [renewModalOpen, setRenewModalOpen] = useState(false);
   const [selectedPlanForPurchase, setSelectedPlanForPurchase] = useState(null);
+  const [selectedPaymentChannel, setSelectedPaymentChannel] = useState('credit_card'); // 'credit_card' | 'debit_card' | 'upi'
+  const [upiVpaInput, setUpiVpaInput] = useState('success@razorpay');
+  const [upiUtrInput, setUpiUtrInput] = useState('');
+  const [copiedUpi, setCopiedUpi] = useState(false);
   const [paymentProcessing, setPaymentProcessing] = useState(false);
   const [receiptModalOpen, setReceiptModalOpen] = useState(false);
   const [selectedReceipt, setSelectedReceipt] = useState(null);
@@ -349,9 +375,10 @@ export default function MemberDashboard() {
     });
   };
 
-  // Handle Online Payment via Razorpay Standard Checkout
-  const handleInitiatePayment = async (planToBuy) => {
+  // Handle Online Payment via Razorpay Standard Checkout (with Credit Card, Debit Card, and UPI/QR blocks)
+  const handleInitiatePayment = async (planToBuy, methodOverride) => {
     const targetPlan = planToBuy || selectedPlanForPurchase;
+    const activeChannel = methodOverride || selectedPaymentChannel || 'credit_card';
     if (!targetPlan) {
       setError('Please select a membership plan to continue.');
       return;
@@ -369,9 +396,18 @@ export default function MemberDashboard() {
       }
 
       // 1. Create order on backend (authoritative pricing)
-      const orderData = await paymentsApi.createOrder({ planId: targetPlan._id });
+      const orderData = await paymentsApi.createOrder({
+        planId: targetPlan._id,
+        preferredMethod: activeChannel,
+      });
 
-      // 2. Open official Razorpay Checkout Modal
+      const sequenceMap = {
+        credit_card: ['block.credit_card', 'block.debit_card', 'block.upi_qr'],
+        debit_card: ['block.debit_card', 'block.credit_card', 'block.upi_qr'],
+        upi: ['block.upi_qr', 'block.credit_card', 'block.debit_card'],
+      };
+
+      // 2. Open official Razorpay Checkout Modal with explicit Credit, Debit & UPI/QR blocks
       const options = {
         key: orderData.keyId,
         amount: orderData.amountInPaise,
@@ -387,6 +423,44 @@ export default function MemberDashboard() {
         notes: {
           memberId: dashboardData?.member?._id,
           planId: targetPlan._id,
+          preferredMethod: activeChannel,
+        },
+        config: {
+          display: {
+            blocks: {
+              credit_card: {
+                name: 'Credit Card',
+                instruments: [
+                  {
+                    method: 'card',
+                    types: ['credit'],
+                  },
+                ],
+              },
+              debit_card: {
+                name: 'Debit Card',
+                instruments: [
+                  {
+                    method: 'card',
+                    types: ['debit'],
+                  },
+                ],
+              },
+              upi_qr: {
+                name: 'QR / UPI (GPay, PhonePe, Paytm)',
+                instruments: [
+                  {
+                    method: 'upi',
+                    flows: ['qr', 'collect', 'intent'],
+                  },
+                ],
+              },
+            },
+            sequence: sequenceMap[activeChannel] || sequenceMap.credit_card,
+            preferences: {
+              show_default_blocks: true,
+            },
+          },
         },
         theme: {
           color: '#ff4d00',
@@ -398,6 +472,7 @@ export default function MemberDashboard() {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
+              selected_method: activeChannel,
             });
 
             flashMessage('Payment confirmed & verified! Your membership is active.');
@@ -426,6 +501,60 @@ export default function MemberDashboard() {
       setError(err.message || 'Failed to initiate payment.');
       setPaymentProcessing(false);
     }
+  };
+
+  // Handle Direct QR / UPI Checkout Confirmation
+  const handleConfirmUpiQrPayment = async (planToBuy) => {
+    const targetPlan = planToBuy || selectedPlanForPurchase;
+    if (!targetPlan) {
+      setError('Please select a membership plan to continue.');
+      return;
+    }
+
+    const trimmedVpa = (upiVpaInput || '').trim();
+    if (!trimmedVpa || !trimmedVpa.includes('@')) {
+      setError('Please enter a valid UPI ID (e.g. success@razorpay or yourname@upi).');
+      return;
+    }
+
+    try {
+      setPaymentProcessing(true);
+      setError('');
+
+      const orderData = await paymentsApi.createOrder({
+        planId: targetPlan._id,
+        preferredMethod: 'upi',
+      });
+
+      await paymentsApi.confirmUpiQr({
+        orderId: orderData.orderId,
+        upiId: trimmedVpa,
+        utrNumber: upiUtrInput.trim() || undefined,
+      });
+
+      flashMessage('QR / UPI payment confirmed & verified! Your membership is active.');
+      setRenewModalOpen(false);
+      setUpiUtrInput('');
+      await Promise.all([loadMemberData(), loadPaymentHistory()]);
+    } catch (err) {
+      if (err?.status === 404) {
+        // Fallback if backend route is not yet deployed: open Razorpay popup pre-focused on UPI/QR
+        setPaymentProcessing(false);
+        await handleInitiatePayment(targetPlan, 'upi');
+        return;
+      }
+      setError(err.message || 'Failed to verify QR / UPI payment.');
+    } finally {
+      setPaymentProcessing(false);
+    }
+  };
+
+  const handleCopyMerchantUpi = () => {
+    if (navigator?.clipboard?.writeText) {
+      navigator.clipboard.writeText('ironforge@upi').catch(() => {});
+    }
+    setCopiedUpi(true);
+    setTimeout(() => setCopiedUpi(false), 2000);
   };
 
   const flashMessage = (msg) => {
@@ -1841,14 +1970,14 @@ export default function MemberDashboard() {
                               fontWeight: 800,
                               letterSpacing: '0.05em',
                               color:
-                                pay.paymentMethod === 'razorpay'
+                                pay.paymentMethod === 'razorpay' || pay.paymentMethod === 'upi'
                                   ? '#00e5ff'
                                   : pay.paymentMethod === 'cash'
                                   ? '#34d399'
                                   : 'var(--primary)',
                             }}
                           >
-                            {pay.paymentMethod === 'razorpay' ? 'Razorpay' : pay.paymentMethod}
+                            {formatPaymentMethodLabel(pay.paymentMethod)}
                           </span>
                         </td>
                         <td>
@@ -2012,12 +2141,12 @@ export default function MemberDashboard() {
           </form>
         </Modal>
 
-        {/* RENEW / UPGRADE MEMBERSHIP MODAL (RAZORPAY INTEGRATION) */}
+        {/* RENEW / UPGRADE MEMBERSHIP MODAL (CREDIT CARD, DEBIT CARD, QR / UPI + RAZORPAY) */}
         <Modal
           isOpen={renewModalOpen}
           onClose={() => setRenewModalOpen(false)}
           title="Select Membership Plan & Checkout"
-          subtitle="Choose your preferred tier. Payment is securely processed via Razorpay Sandbox."
+          subtitle="Choose your tier and preferred payment method: Credit Card, Debit Card, or QR (UPI)."
           size="lg"
         >
           <div>
@@ -2069,6 +2198,172 @@ export default function MemberDashboard() {
               })}
             </div>
 
+            {/* PAYMENT METHOD SELECTOR: CREDIT CARD, DEBIT CARD, QR (UPI) */}
+            <div className="payment-methods-section">
+              <div className="payment-methods-label">
+                <Shield size={15} className="text-highlight" />
+                <span>Choose Payment Method</span>
+              </div>
+
+              <div className="payment-methods-grid">
+                <button
+                  type="button"
+                  className={`payment-method-card ${selectedPaymentChannel === 'credit_card' ? 'selected' : ''}`}
+                  onClick={() => setSelectedPaymentChannel('credit_card')}
+                >
+                  <div className="payment-method-card-top">
+                    <div className="payment-method-icon-box">
+                      <CreditCard size={18} />
+                    </div>
+                    {selectedPaymentChannel === 'credit_card' && (
+                      <Badge variant="primary" size="sm">Active</Badge>
+                    )}
+                  </div>
+                  <span className="payment-method-title">Credit Card</span>
+                  <span className="payment-method-sub">Visa, Mastercard & RuPay Credit Cards</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`payment-method-card ${selectedPaymentChannel === 'debit_card' ? 'selected' : ''}`}
+                  onClick={() => setSelectedPaymentChannel('debit_card')}
+                >
+                  <div className="payment-method-card-top">
+                    <div className="payment-method-icon-box">
+                      <CreditCard size={18} />
+                    </div>
+                    {selectedPaymentChannel === 'debit_card' && (
+                      <Badge variant="primary" size="sm">Active</Badge>
+                    )}
+                  </div>
+                  <span className="payment-method-title">Debit Card</span>
+                  <span className="payment-method-sub">All Domestic Bank ATM / Debit Cards</span>
+                </button>
+
+                <button
+                  type="button"
+                  className={`payment-method-card ${selectedPaymentChannel === 'upi' ? 'selected' : ''}`}
+                  onClick={() => setSelectedPaymentChannel('upi')}
+                >
+                  <div className="payment-method-card-top">
+                    <div className="payment-method-icon-box">
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                        <path d="M14 14h3v3h-3zM20 14v3M14 20h7M20 20v0" />
+                      </svg>
+                    </div>
+                    {selectedPaymentChannel === 'upi' && (
+                      <Badge variant="primary" size="sm">Active</Badge>
+                    )}
+                  </div>
+                  <span className="payment-method-title">QR (UPI)</span>
+                  <span className="payment-method-sub">Scan QR Code • GPay, PhonePe, Paytm, BHIM</span>
+                </button>
+              </div>
+            </div>
+
+            {/* INTERACTIVE QR (UPI) SCANNER & VERIFICATION PANEL */}
+            {selectedPlanForPurchase && selectedPaymentChannel === 'upi' && (() => {
+              const upiUri = `upi://pay?pa=ironforge@upi&pn=IronForge%20Gym&am=${selectedPlanForPurchase.price}&cu=INR`;
+              const qrMatrix = generateQrMatrix(upiUri);
+              const moduleCount = qrMatrix.length;
+              return (
+                <div className="upi-qr-checkout-panel">
+                  <div className="upi-qr-box-wrapper">
+                    <div className="upi-qr-frame" title="Scan with any UPI app">
+                      <svg
+                        width="148"
+                        height="148"
+                        viewBox={`0 0 ${moduleCount + 4} ${moduleCount + 4}`}
+                        shapeRendering="crispEdges"
+                        aria-label={`UPI QR Code for ₹${selectedPlanForPurchase.price}`}
+                      >
+                        <rect width={moduleCount + 4} height={moduleCount + 4} fill="#ffffff" />
+                        {qrMatrix.map((row, rIdx) =>
+                          row.map((cell, cIdx) =>
+                            cell ? (
+                              <rect
+                                key={`${rIdx}-${cIdx}`}
+                                x={cIdx + 2}
+                                y={rIdx + 2}
+                                width="1"
+                                height="1"
+                                fill="#0b0f19"
+                              />
+                            ) : null
+                          )
+                        )}
+                      </svg>
+                    </div>
+                    <div className="upi-qr-apps-row">
+                      <span className="upi-app-pill">GPay</span>
+                      <span className="upi-app-pill">PhonePe</span>
+                      <span className="upi-app-pill">Paytm</span>
+                      <span className="upi-app-pill">BHIM</span>
+                    </div>
+                  </div>
+
+                  <div className="upi-qr-details">
+                    <div>
+                      <span style={{ fontSize: '0.74rem', fontWeight: 800, textTransform: 'uppercase', color: '#00e5ff', letterSpacing: '0.05em', display: 'block' }}>
+                        Instant UPI QR Payment • ₹{selectedPlanForPurchase.price}
+                      </span>
+                      <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', margin: '0.2rem 0 0' }}>
+                        Scan the QR code above with any UPI app or verify using your UPI ID below (use <code style={{ color: '#34d399' }}>success@razorpay</code> in Sandbox Mode).
+                      </p>
+                    </div>
+
+                    <div className="upi-merchant-vpa-bar">
+                      <span style={{ color: 'var(--text-muted)' }}>
+                        Merchant VPA: <strong style={{ color: '#ffffff', fontFamily: 'monospace' }}>ironforge@upi</strong>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleCopyMerchantUpi}
+                        style={{
+                          background: 'rgba(255, 77, 0, 0.16)',
+                          border: '1px solid rgba(255, 77, 0, 0.35)',
+                          color: '#ffffff',
+                          borderRadius: '6px',
+                          padding: '0.22rem 0.6rem',
+                          fontSize: '0.75rem',
+                          fontWeight: 700,
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {copiedUpi ? 'Copied!' : 'Copy UPI ID'}
+                      </button>
+                    </div>
+
+                    <div className="upi-inputs-row">
+                      <div className="form-field" style={{ marginBottom: 0 }}>
+                        <label className="field-label" style={{ fontSize: '0.74rem' }}>Your UPI ID *</label>
+                        <input
+                          type="text"
+                          className="field-input"
+                          placeholder="e.g. success@razorpay or name@okaxis"
+                          value={upiVpaInput}
+                          onChange={(e) => setUpiVpaInput(e.target.value)}
+                        />
+                      </div>
+                      <div className="form-field" style={{ marginBottom: 0 }}>
+                        <label className="field-label" style={{ fontSize: '0.74rem' }}>12-Digit UTR / Ref (Optional)</label>
+                        <input
+                          type="text"
+                          className="field-input"
+                          placeholder="Optional UTR reference"
+                          value={upiUtrInput}
+                          onChange={(e) => setUpiUtrInput(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
             {selectedPlanForPurchase && (
               <div
                 style={{
@@ -2086,7 +2381,7 @@ export default function MemberDashboard() {
               >
                 <div>
                   <span style={{ fontSize: '0.78rem', fontWeight: 800, textTransform: 'uppercase', color: 'var(--primary)', display: 'block' }}>
-                    Authoritative Order Summary
+                    Authoritative Order Summary • {formatPaymentMethodLabel(selectedPaymentChannel)}
                   </span>
                   <span style={{ fontSize: '1.05rem', fontWeight: 700, color: '#ffffff' }}>
                     {selectedPlanForPurchase.name} ({selectedPlanForPurchase.duration} Months Subscription)
@@ -2103,7 +2398,7 @@ export default function MemberDashboard() {
               </div>
             )}
 
-            <div className="modal-actions-row" style={{ marginTop: '1.5rem' }}>
+            <div className="modal-actions-row" style={{ marginTop: '1.5rem', flexWrap: 'wrap', gap: '0.65rem' }}>
               <Button
                 variant="ghost"
                 size="md"
@@ -2112,15 +2407,41 @@ export default function MemberDashboard() {
               >
                 Cancel
               </Button>
-              <Button
-                variant="primary"
-                size="md"
-                icon={Zap}
-                onClick={() => handleInitiatePayment(selectedPlanForPurchase)}
-                disabled={paymentProcessing || !selectedPlanForPurchase}
-              >
-                {paymentProcessing ? 'Connecting to Razorpay...' : `Pay ₹${selectedPlanForPurchase?.price || 0} via Razorpay`}
-              </Button>
+              {selectedPaymentChannel === 'upi' ? (
+                <>
+                  <Button
+                    variant="secondary"
+                    size="md"
+                    onClick={() => handleInitiatePayment(selectedPlanForPurchase, 'upi')}
+                    disabled={paymentProcessing || !selectedPlanForPurchase}
+                  >
+                    Open Razorpay Gateway
+                  </Button>
+                  <Button
+                    variant="primary"
+                    size="md"
+                    icon={Zap}
+                    onClick={() => handleConfirmUpiQrPayment(selectedPlanForPurchase)}
+                    disabled={paymentProcessing || !selectedPlanForPurchase}
+                  >
+                    {paymentProcessing
+                      ? 'Verifying UPI Payment...'
+                      : `Complete QR / UPI Payment (₹${selectedPlanForPurchase?.price || 0})`}
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  variant="primary"
+                  size="md"
+                  icon={Zap}
+                  onClick={() => handleInitiatePayment(selectedPlanForPurchase, selectedPaymentChannel)}
+                  disabled={paymentProcessing || !selectedPlanForPurchase}
+                >
+                  {paymentProcessing
+                    ? 'Connecting to Razorpay...'
+                    : `Pay ₹${selectedPlanForPurchase?.price || 0} via ${formatPaymentMethodLabel(selectedPaymentChannel)}`}
+                </Button>
+              )}
             </div>
           </div>
         </Modal>
@@ -2179,8 +2500,8 @@ export default function MemberDashboard() {
                 </div>
                 <div className="receipt-meta-item">
                   <label>Payment Method</label>
-                  <span style={{ textTransform: 'capitalize' }}>
-                    {selectedReceipt.paymentMethod === 'razorpay' ? 'Razorpay Online' : selectedReceipt.paymentMethod}
+                  <span>
+                    {formatPaymentMethodLabel(selectedReceipt.paymentMethod)}
                   </span>
                 </div>
               </div>

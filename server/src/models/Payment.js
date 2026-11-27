@@ -27,7 +27,7 @@ const paymentSchema = new mongoose.Schema(
     paymentMethod: {
       type: String,
       enum: {
-        values: ['razorpay', 'cash', 'upi', 'card', 'bank_transfer', 'other'],
+        values: ['razorpay', 'cash', 'upi', 'card', 'credit_card', 'debit_card', 'bank_transfer', 'other'],
         message: '{VALUE} is not a supported payment method',
       },
       default: 'razorpay',

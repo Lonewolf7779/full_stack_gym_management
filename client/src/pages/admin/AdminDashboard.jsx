@@ -2646,9 +2646,11 @@ export default function AdminDashboard() {
                   onChange={(e) => setPaymentMethodFilter(e.target.value)}
                 >
                   <option value="">All Payment Methods</option>
+                  <option value="credit_card">Credit Card</option>
+                  <option value="debit_card">Debit Card</option>
+                  <option value="upi">QR / UPI</option>
                   <option value="razorpay">Razorpay Online</option>
                   <option value="cash">Cash (Offline)</option>
-                  <option value="upi">UPI (Offline / Direct)</option>
                   <option value="card">Card (POS / Terminal)</option>
                   <option value="bank_transfer">Bank Transfer</option>
                   <option value="other">Other</option>
@@ -2751,14 +2753,22 @@ export default function AdminDashboard() {
                                 fontWeight: 800,
                                 letterSpacing: '0.05em',
                                 color:
-                                  pay.paymentMethod === 'razorpay'
+                                  pay.paymentMethod === 'razorpay' || pay.paymentMethod === 'upi'
                                     ? '#00e5ff'
                                     : pay.paymentMethod === 'cash'
                                     ? '#34d399'
                                     : 'var(--primary)',
                               }}
                             >
-                              {pay.paymentMethod === 'razorpay' ? 'Razorpay' : pay.paymentMethod}
+                              {pay.paymentMethod === 'credit_card'
+                                ? 'Credit Card'
+                                : pay.paymentMethod === 'debit_card'
+                                ? 'Debit Card'
+                                : pay.paymentMethod === 'upi'
+                                ? 'QR / UPI'
+                                : pay.paymentMethod === 'razorpay'
+                                ? 'Razorpay'
+                                : pay.paymentMethod}
                             </span>
                           </td>
                           <td>
@@ -4614,7 +4624,9 @@ export default function AdminDashboard() {
                   onChange={(e) => setManualPaymentForm({ ...manualPaymentForm, paymentMethod: e.target.value })}
                 >
                   <option value="cash">Cash (Front Desk)</option>
-                  <option value="upi">UPI (Direct QR / PhonePe / GPay)</option>
+                  <option value="upi">QR / UPI (PhonePe / GPay / Paytm)</option>
+                  <option value="credit_card">Credit Card</option>
+                  <option value="debit_card">Debit Card</option>
                   <option value="card">Card (POS Swiped)</option>
                   <option value="bank_transfer">Bank Wire / IMPS</option>
                   <option value="other">Other Manual Settlement</option>
@@ -4729,7 +4741,15 @@ export default function AdminDashboard() {
                 <div className="receipt-meta-item">
                   <label>Payment Channel</label>
                   <span style={{ textTransform: 'capitalize' }}>
-                    {selectedAdminReceipt.paymentMethod === 'razorpay' ? 'Razorpay Standard' : selectedAdminReceipt.paymentMethod}
+                    {selectedAdminReceipt.paymentMethod === 'credit_card'
+                      ? 'Credit Card'
+                      : selectedAdminReceipt.paymentMethod === 'debit_card'
+                      ? 'Debit Card'
+                      : selectedAdminReceipt.paymentMethod === 'upi'
+                      ? 'QR / UPI'
+                      : selectedAdminReceipt.paymentMethod === 'razorpay'
+                      ? 'Razorpay Standard'
+                      : selectedAdminReceipt.paymentMethod}
                   </span>
                 </div>
               </div>
